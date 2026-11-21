@@ -10,7 +10,8 @@
   :root{--ink:#16222A;--ink-2:#4A5A55;--paper:#F4F6F5;--sheet:#fff;--rule:#D5DDD9;--frasco:#1E6B57;--frasco-soft:#E3EFEA}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:Georgia,"Times New Roman",serif;line-height:1.5}
-  header{background:#16222A;color:#fff;padding:40px 24px 36px}
+  header{background:#16222A;color:#fff;padding:40px 0 36px}
+  header .wrap{padding:0 24px}
   .wrap{max-width:860px;margin:0 auto}
   .inst{display:flex;align-items:center;gap:14px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;opacity:.9}
   .inst img{width:52px;height:52px;border-radius:50%;background:#fff}
@@ -22,6 +23,13 @@
   a.clase:hover,a.clase:focus-visible{border-color:var(--frasco);box-shadow:0 0 0 2px var(--frasco) inset;outline:none}
   .n{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:600;color:var(--frasco);background:var(--frasco-soft);border-radius:10px;min-width:48px;height:48px;display:grid;place-items:center;font-size:20px}
   .t{font-size:19px}
+  .prog{display:flex;align-items:center;gap:18px;background:var(--frasco);color:#fff;border-radius:14px;padding:20px 22px;text-decoration:none;margin-bottom:30px}
+  .prog:hover,.prog:focus-visible{background:#17543F;outline:none;box-shadow:0 0 0 3px #16222A}
+  .prog .ic{min-width:48px;height:48px;border-radius:10px;background:rgba(255,255,255,.15);display:grid;place-items:center}
+  .prog .ic svg{width:26px;height:26px}
+  .prog .t{font-size:21px}
+  .prog small{display:block;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;opacity:.85;margin-top:2px}
+  h2{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:20px;margin:0 0 14px;color:var(--ink-2)}
   .help{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;color:var(--ink-2);margin:28px 0 0}
 </style>
 </head>
@@ -34,6 +42,8 @@
   </div>
 </header>
 <main class="wrap">
+  <a class="prog" href="programa-de-contenidos.html"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 4h11v16H8z"/><path d="M5 7v13h11"/><path d="M11 9h5M11 13h5"/></svg></span><span class="t">Programa de contenidos<small>Las cuatro unidades de la materia</small></span></a>
+  <h2>Clases</h2>
   <ol>
     <li><a class="clase" href="clases/clase-01-propiedades-fisicas-de-la-materia.html"><span class="n">1</span><span class="t">Propiedades físicas de la materia</span></a></li>
     <li><a class="clase" href="clases/clase-02-sistemas-materiales.html"><span class="n">2</span><span class="t">Los sistemas materiales</span></a></li>
