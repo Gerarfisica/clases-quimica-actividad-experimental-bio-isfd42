@@ -35,9 +35,14 @@
   .volver{display:inline-block;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;color:#fff;opacity:.8;text-decoration:none;margin-bottom:18px}
   .volver:hover,.volver:focus-visible{opacity:1;text-decoration:underline}
   ol{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+  a.clase{text-decoration:none}
+  a.clase:hover,a.clase:focus-visible{border-color:var(--frasco);box-shadow:0 0 0 2px var(--frasco) inset;outline:none}
   .clase{display:flex;align-items:center;gap:18px;background:var(--sheet);border:1px solid var(--rule);border-radius:14px;padding:16px 20px;color:inherit}
   .n{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:600;color:var(--frasco);background:var(--frasco-soft);border-radius:10px;min-width:48px;height:48px;display:grid;place-items:center;font-size:20px}
   .clase .t{font-size:19px;flex:1}
+  div.clase{background:transparent;border-style:dashed}
+  div.clase .n{color:var(--ink-2);background:#E9EDEB}
+  div.clase .t{color:var(--ink-2)}
   .vacio{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;color:var(--ink-2);background:transparent;border:1px dashed var(--rule);border-radius:14px;padding:18px 20px;margin:0 0 24px}
   @media (max-width:480px){.clase{gap:14px;padding:14px 16px}.clase .t{font-size:17px}}
 </style>
@@ -52,13 +57,13 @@
   </div>
 </header>
 <main class="wrap">
-  <p class="vacio">Las guías de estas prácticas se publicarán próximamente.</p>
+  <p class="vacio">Las prácticas que todavía no tienen enlace se publicarán próximamente.</p>
   <h2>Prácticas</h2>
   <ol>
-    <li><div class="clase"><span class="n">1</span><span class="t">Reconocimiento, clasificación y utilización de materiales de laboratorio</span></div></li>
-    <li><div class="clase"><span class="n">2</span><span class="t">Reconocimiento y funcionamiento de equipos y dispositivos experimentales</span></div></li>
-    <li><div class="clase"><span class="n">3</span><span class="t">Medición de volúmenes, utilización y calibración del material volumétrico</span></div></li>
-    <li><div class="clase"><span class="n">4</span><span class="t">Técnicas de filtración y separación de sólidos y líquidos</span></div></li>
+    <li><a class="clase" href="practicas/tgl-001-materiales-de-laboratorio.html"><span class="n">1</span><span class="t">Reconocimiento, clasificación y utilización de materiales de laboratorio</span></a></li>
+    <li><a class="clase" href="practicas/tgl-002-equipos-y-dispositivos-experimentales.html"><span class="n">2</span><span class="t">Reconocimiento y funcionamiento de equipos y dispositivos experimentales</span></a></li>
+    <li><a class="clase" href="practicas/tgl-003-medicion-y-calibracion-del-material-volumetrico.html"><span class="n">3</span><span class="t">Medición de volúmenes, utilización y calibración del material volumétrico</span></a></li>
+    <li><a class="clase" href="practicas/tgl-004-tecnicas-de-filtracion-y-separacion-de-solidos-y-liquidos.html"><span class="n">4</span><span class="t">Técnicas de filtración y separación de sólidos y líquidos</span></a></li>
     <li><div class="clase"><span class="n">5</span><span class="t">Destilación simple, fraccionada y por arrastre de vapor</span></div></li>
     <li><div class="clase"><span class="n">6</span><span class="t">Extracción líquido-líquido y sólido-líquido: maceración y Soxhlet</span></div></li>
     <li><div class="clase"><span class="n">7</span><span class="t">Cristalización y recristalización como técnicas de purificación</span></div></li>
