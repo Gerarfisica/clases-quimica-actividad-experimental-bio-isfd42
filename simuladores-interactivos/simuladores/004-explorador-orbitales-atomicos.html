@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Explorador de Orbitales Atómicos · Átomo hidrogenoide</title>
+<meta name="description" content="Simulador 3D interactivo de orbitales atómicos hidrogenoides (1s a 3d) para el Profesorado de Química.">
+
+<!--
+  ===========================================================================
+  EXPLORADOR 3D DE ORBITALES ATÓMICOS
+  ---------------------------------------------------------------------------
+  Modelo físico : átomo hidrogenoide (un electrón, Z = 1, núcleo fijo).
+                  ψ_nlm(r,θ,φ) = R_nl(r) · Y_lm(θ,φ)  (armónicos esféricos reales)
+                  Longitudes en unidades del radio de Bohr a0 = 52,92 pm.
+  Representaciones (todas calculadas, ninguna dibujada "a mano"):
+    · Isosuperficies |ψ| = c, con c elegido para que la región |ψ| ≥ c
+      encierre una probabilidad P (50–95 %). Malla por "surface nets"
+      sobre una grilla 3D de ψ; normales del gradiente analítico.
+    · Nube de puntos: muestreo Monte Carlo exacto de |ψ|²
+      (r por CDF inversa de P(r)=r²R², dirección por rechazo sobre |Y|²).
+    · Plano de corte: mapa 2D de ψ (fases) o |ψ|² (densidad).
+    · Nodos radiales (esferas R_nl = 0) y angulares (planos/conos Y = 0).
+  Bibliotecas por CDN (justificación):
+    · Three.js r160 → WebGL, cámaras, controles orbitales, etiquetas CSS2D.
+    · MathJax 3     → expresiones matemáticas con calidad tipográfica.
+  Sin frameworks, sin backend: se abre directamente en el navegador.
+  ===========================================================================
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+    chtml: { scale: 0.96, matchFontHeight: false },
+    options: { ignoreHtmlClass: 'no-mathjax' }
+  };
+</script>
+<script async id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-chtml.js"></script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+/* ==========================================================================
+   1. VARIABLES Y BASE
+   ========================================================================== */
+:root{
+  --bg0:#02060d; --bg1:#061226;
+  --panel:rgba(8,17,34,.76); --panel-solid:#0a1529;
+  --line:rgba(110,170,255,.15); --line2:rgba(110,170,255,.28);
+  --cyan:#2fd4ff; --elec:#3d7bff; --blue:#1d4ed8;
+  --text:#d9e5f3; --muted:#8195b1; --dim:#5a6c86;
+  --pos:#2fd4ff; --neg:#ff8a3d; --dens:#7cf2c8; --node:#c4b5fd;
+  --ok:#4ade80; --bad:#f87171;
+  --r:12px;
+  --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+  --ctrlW:296px; --sideW:392px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;color:var(--text);font-family:var(--font);font-size:14px;
+  background:radial-gradient(ellipse 80% 70% at 50% 45%,#0b1d3c 0%,#06101f 55%,#02050b 100%);
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font-family:inherit}
+#viewport{position:fixed;inset:0;touch-action:none}
+#viewport canvas{display:block}
+#labels{position:fixed;inset:0;pointer-events:none}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ==========================================================================
+   2. BARRA SUPERIOR
+   ========================================================================== */
+.topbar{position:fixed;top:0;left:0;right:0;height:58px;z-index:30;display:flex;align-items:center;gap:14px;
+  padding:0 16px;background:linear-gradient(180deg,rgba(2,6,14,.92) 0%,rgba(2,6,14,.55) 70%,rgba(2,6,14,0) 100%)}
+.brand{display:flex;align-items:center;gap:11px;min-width:0;overflow:hidden}
+.brand>div{min-width:0}
+.brand svg{flex:none}
+.brand h1{font-size:15.5px;font-weight:600;margin:0;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand p{margin:1px 0 0;font-size:11.5px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .spacer{flex:1;min-width:4px}
+.tb-btn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:9px;cursor:pointer;
+  border:1px solid var(--line2);background:rgba(14,30,58,.55);color:var(--text);font-size:12.5px;font-weight:500;transition:.18s}
+.tb-btn:hover{border-color:var(--cyan);color:#fff;background:rgba(30,70,130,.45)}
+.tb-btn.accent{border-color:rgba(47,212,255,.55);background:linear-gradient(135deg,rgba(47,212,255,.18),rgba(61,123,255,.22))}
+.tb-btn svg{width:16px;height:16px}
+.mobile-only{display:none!important}
+
+/* ==========================================================================
+   3. PANELES TRANSLÚCIDOS
+   ========================================================================== */
+.panel{position:fixed;z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+  box-shadow:0 10px 40px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04);display:flex;flex-direction:column;overflow:hidden}
+#controls{left:14px;top:66px;bottom:14px;width:var(--ctrlW)}
+#side{right:14px;top:66px;bottom:14px;width:var(--sideW)}
+.panel-scroll{overflow-y:auto;overflow-x:hidden;flex:1;padding:6px 14px 16px;scrollbar-width:thin;scrollbar-color:#24406b transparent}
+.panel-scroll::-webkit-scrollbar{width:6px}.panel-scroll::-webkit-scrollbar-thumb{background:#22406e;border-radius:3px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;border-bottom:1px solid var(--line)}
+.panel-head h2{margin:0;font-size:11px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted)}
+.close-x{display:none;background:none;border:0;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
+
+.sec{padding:12px 0 4px;border-bottom:1px solid rgba(110,170,255,.08)}
+.sec:last-child{border-bottom:0}
+.sec-t{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--cyan);font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.sec-t::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(47,212,255,.3),transparent)}
+.row{margin:0 0 11px}
+.lbl{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--muted);margin-bottom:6px}
+.lbl b{font-family:var(--mono);font-weight:500;color:var(--text);font-size:11.5px}
+
+/* Controles segmentados */
+.seg{display:flex;background:rgba(3,10,22,.65);border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
+.seg button{flex:1;min-width:0;height:30px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;
+  font-size:12.5px;font-weight:500;transition:.15s;white-space:nowrap;padding:0 4px}
+.seg button:hover:not(:disabled){color:#fff;background:rgba(61,123,255,.14)}
+.seg button.on{color:#fff;background:linear-gradient(135deg,rgba(47,212,255,.30),rgba(61,123,255,.38));box-shadow:inset 0 0 0 1px rgba(47,212,255,.5)}
+.seg button:disabled{opacity:.28;cursor:not-allowed}
+.seg.mono button{font-family:var(--mono);font-size:12px}
+
+/* Tabla de orbitales */
+.otable{display:grid;grid-template-columns:28px repeat(5,1fr);gap:4px;align-items:center}
+.otable .nlab{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:center}
+.chip{height:28px;border-radius:6px;border:1px solid var(--line);background:rgba(10,24,48,.6);color:#b8c9df;cursor:pointer;
+  font-family:var(--mono);font-size:11px;padding:0 2px;transition:.15s;white-space:nowrap}
+.chip sub{font-size:8.5px}
+.chip:hover{border-color:var(--cyan);color:#fff}
+.chip.on{background:rgba(47,212,255,.2);border-color:var(--cyan);color:#fff;box-shadow:0 0 12px rgba(47,212,255,.25)}
+.chip.s{grid-column:span 5}
+.otable .tlab{font-size:10px;color:var(--dim);text-align:center;font-family:var(--mono)}
+
+/* Interruptores */
+.tg{display:flex;align-items:center;justify-content:space-between;padding:6px 0;cursor:pointer;font-size:12.8px;user-select:none}
+.tg span small{display:block;color:var(--dim);font-size:10.5px;margin-top:1px}
+.tg input{display:none}
+.tg i{position:relative;flex:none;width:34px;height:19px;border-radius:10px;background:#16253f;border:1px solid var(--line2);transition:.2s}
+.tg i::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#6a7f9e;transition:.2s}
+.tg input:checked+i{background:rgba(47,212,255,.3);border-color:var(--cyan)}
+.tg input:checked+i::after{left:17px;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
+/* Deslizadores */
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--elec) var(--p,50%),#1a2a46 var(--p,50%))}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#1a2a46}
+input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--elec)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;margin-top:-5.5px;background:#e8f7ff;border:2px solid var(--cyan);box-shadow:0 0 10px rgba(47,212,255,.6);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#e8f7ff;border:2px solid var(--cyan);box-shadow:0 0 10px rgba(47,212,255,.6);cursor:pointer}
+
+select{width:100%;height:32px;border-radius:8px;border:1px solid var(--line2);background:#0b1931;color:var(--text);padding:0 10px;font-family:inherit;font-size:12.5px}
+.btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;height:34px;border-radius:9px;border:1px solid var(--line2);
+  background:rgba(14,30,58,.6);color:var(--text);cursor:pointer;font-size:12.5px;font-weight:500;transition:.15s}
+.btn:hover{border-color:var(--cyan);color:#fff}
+.btn.primary{background:linear-gradient(135deg,rgba(47,212,255,.22),rgba(61,123,255,.3));border-color:rgba(47,212,255,.5)}
+.btn-row{display:flex;gap:6px}
+.hint{font-size:11px;color:var(--dim);line-height:1.45;margin:4px 0 0}
+
+/* ==========================================================================
+   4. PANEL DERECHO: PESTAÑAS E INFORMACIÓN
+   ========================================================================== */
+.tabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;height:36px;border:0;background:none;color:var(--muted);font-size:12.5px;font-weight:500;cursor:pointer;
+  border-bottom:2px solid transparent;transition:.15s}
+.tabs button.on{color:#fff;border-bottom-color:var(--cyan)}
+.tabs button:hover{color:#fff}
+.tabpane{display:none}.tabpane.on{display:block}
+
+.ohead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:14px 0 10px}
+.oname{font-size:34px;font-weight:300;line-height:1;color:#fff;letter-spacing:.5px}
+.ofam{font-size:11.5px;color:var(--muted);text-align:right;font-family:var(--mono);line-height:1.5}
+.qgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:6px}
+.qcell{background:rgba(3,10,22,.55);border:1px solid var(--line);border-radius:9px;padding:8px 9px}
+.qcell .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.qcell .v{font-family:var(--mono);font-size:17px;color:#fff;margin-top:3px}
+.qcell .v small{font-size:11px;color:var(--muted)}
+.qcell.wide{grid-column:span 3}
+.qcell.wide .v{font-size:13px}
+.mlrow{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.mlrow span{display:inline-flex;align-items:center;height:22px;line-height:1;font-family:var(--mono);font-size:11.5px;padding:0 7px;border-radius:5px;background:#0e1d38;border:1px solid var(--line);color:#9fb3cf}
+.mlrow span.act{border-color:var(--cyan);color:#fff;background:rgba(47,212,255,.16)}
+.ncards{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.ncard{border-radius:9px;padding:9px;background:linear-gradient(160deg,rgba(196,181,253,.10),rgba(3,10,22,.5));border:1px solid rgba(196,181,253,.22);text-align:center}
+.ncard .v{font-size:24px;font-weight:300;color:#fff;font-family:var(--mono)}
+.ncard .k{font-size:10px;color:#b9abef;text-transform:uppercase;letter-spacing:.8px}
+.ncard .f{font-size:10px;color:var(--dim);font-family:var(--mono);margin-top:2px}
+.kv{display:grid;grid-template-columns:92px 1fr;gap:6px 10px;font-size:12.5px;line-height:1.5;margin:10px 0}
+.kv dt{color:var(--muted)}.kv dd{margin:0}
+.prose{font-size:12.8px;line-height:1.62;color:#c9d6e6}
+.prose p{margin:0 0 9px}
+.prose b,.prose strong{color:#fff;font-weight:600}
+.eq{background:rgba(2,8,18,.6);border:1px solid var(--line);border-left:2px solid var(--elec);border-radius:8px;padding:6px 10px;margin:8px 0;overflow-x:auto;font-size:13px}
+.eq .cap{font-size:10.5px;color:var(--muted);font-family:var(--font);margin-bottom:2px}
+.plotwrap{background:rgba(2,8,18,.6);border:1px solid var(--line);border-radius:10px;padding:6px 6px 2px;margin:6px 0}
+#radialPlot{width:100%;height:210px;display:block}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.stat{background:rgba(3,10,22,.55);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.stat .k{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+.stat .v{font-family:var(--mono);font-size:12.5px;color:#fff;margin-top:2px}
+.regions{display:flex;height:22px;border-radius:6px;overflow:hidden;margin:6px 0 2px;border:1px solid var(--line)}
+.regions div{display:flex;align-items:center;justify-content:center;font-size:10px;font-family:var(--mono);color:#02101c;font-weight:600;min-width:2px}
+.note{font-size:11px;color:var(--dim);line-height:1.5;border-top:1px dashed var(--line);margin-top:12px;padding-top:9px}
+.warnbox{font-size:11.8px;line-height:1.5;padding:8px 10px;border-radius:8px;background:rgba(255,138,61,.07);border:1px solid rgba(255,138,61,.25);color:#e8cdb8;margin:8px 0}
+
+/* Conceptos (modo didáctico) */
+.concept{border:1px solid var(--line);border-radius:11px;margin:10px 0;background:rgba(3,10,22,.4);overflow:hidden}
+.concept>summary{list-style:none;cursor:pointer;padding:11px 12px;display:flex;align-items:center;gap:10px;font-size:13.2px;font-weight:500}
+.concept>summary::-webkit-details-marker{display:none}
+.concept>summary .num{flex:none;width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-family:var(--mono);font-size:11.5px;
+  background:rgba(47,212,255,.14);color:var(--cyan);border:1px solid rgba(47,212,255,.35)}
+.concept>summary::after{content:"+";margin-left:auto;color:var(--muted);font-size:18px;transition:.2s}
+.concept[open]>summary::after{transform:rotate(45deg)}
+.concept[open]>summary{border-bottom:1px solid var(--line);background:rgba(47,212,255,.05)}
+.concept .body{padding:10px 12px 12px}
+.demos{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.demo{height:28px;padding:0 10px;border-radius:7px;border:1px solid rgba(47,212,255,.45);background:rgba(47,212,255,.10);color:#dff7ff;font-size:11.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.demo:hover{background:rgba(47,212,255,.22)}
+.demo::before{content:"▸";color:var(--cyan)}
+table.qn{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+table.qn th,table.qn td{border-bottom:1px solid var(--line);padding:5px 4px;text-align:center}
+table.qn th{color:var(--muted);font-weight:500;font-size:11px}
+
+/* Actividades */
+.act{border:1px solid var(--line);border-radius:11px;padding:12px;margin:10px 0;background:rgba(3,10,22,.4)}
+.act h4{margin:0 0 6px;font-size:13.2px;font-weight:600;display:flex;gap:8px;align-items:center}
+.act h4 .tag{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:5px;background:rgba(124,242,200,.12);color:var(--dens);border:1px solid rgba(124,242,200,.3)}
+.act .task{font-size:12.4px;line-height:1.55;color:#c3d1e3;margin:0 0 8px}
+.act .q{font-size:12.8px;font-weight:500;color:#fff;margin:10px 0 7px}
+.opts{display:flex;flex-direction:column;gap:5px}
+.opt{text-align:left;padding:8px 10px;border-radius:8px;border:1px solid var(--line2);background:rgba(10,24,48,.55);color:#cfdcec;font-size:12.2px;cursor:pointer;line-height:1.4;transition:.15s}
+.opt:hover:not(:disabled){border-color:var(--cyan)}
+.opt.right{border-color:var(--ok);background:rgba(74,222,128,.12);color:#fff}
+.opt.wrong{border-color:var(--bad);background:rgba(248,113,113,.1)}
+.opt:disabled{cursor:default}
+.fb{display:none;margin-top:8px;font-size:12px;line-height:1.55;padding:8px 10px;border-radius:8px;background:rgba(61,123,255,.1);border:1px solid rgba(61,123,255,.3)}
+.fb.show{display:block}
+.score{font-family:var(--mono);font-size:12px;color:var(--muted);padding:10px 0 0;display:flex;justify-content:space-between;align-items:center}
+
+/* ==========================================================================
+   5. HUD, LEYENDA, VISTAS, CARGA
+   ========================================================================== */
+#hud{position:fixed;z-index:15;bottom:14px;left:calc(var(--ctrlW) + 28px);right:calc(var(--sideW) + 28px);display:flex;justify-content:center;pointer-events:none}
+.hud-in{pointer-events:auto;display:flex;flex-direction:column;gap:6px;align-items:center;max-width:100%}
+.legend{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.lg{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:13px;background:rgba(5,12,26,.78);border:1px solid var(--line);font-size:11.5px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.lg i{width:10px;height:10px;border-radius:50%;flex:none}
+.hudline{font-family:var(--mono);font-size:11px;color:var(--muted);background:rgba(5,12,26,.7);border:1px solid var(--line);border-radius:8px;padding:5px 10px;text-align:center;line-height:1.5;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.hudline b{color:var(--text);font-weight:500}
+#viewbar{position:fixed;z-index:15;top:68px;right:calc(var(--sideW) + 28px);display:flex;gap:6px}
+#viewbar .seg{background:rgba(5,12,26,.75);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#viewbar .seg button{height:28px;padding:0 9px;font-size:11.5px;font-family:var(--mono)}
+#corner{position:fixed;z-index:15;top:68px;left:calc(var(--ctrlW) + 28px);pointer-events:none}
+#corner .big{font-size:42px;font-weight:200;color:#fff;line-height:1;text-shadow:0 0 30px rgba(47,212,255,.35)}
+#corner .sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px}
+#busy{position:fixed;z-index:40;top:68px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:8px;padding:6px 12px;border-radius:16px;
+  background:rgba(5,12,26,.85);border:1px solid var(--line2);font-size:11.5px;font-family:var(--mono);color:var(--cyan)}
+#busy.show{display:flex}
+#busy i{width:10px;height:10px;border-radius:50%;border:2px solid var(--cyan);border-top-color:transparent;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#splash{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:#02060d;transition:opacity .6s}
+#splash.hide{opacity:0;pointer-events:none}
+#splash .in{text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px}
+#splash .in div{width:46px;height:46px;margin:0 auto 14px;border-radius:50%;border:2px solid rgba(47,212,255,.2);border-top-color:var(--cyan);animation:spin 1s linear infinite}
+#errbox{display:none;position:fixed;inset:auto 20px 20px 20px;z-index:200;padding:12px 14px;border-radius:10px;background:#2a0e12;border:1px solid #f87171;color:#fecaca;font-size:13px}
+
+/* Etiquetas 3D (CSS2D) */
+.axlab{font-family:var(--mono);font-size:14px;font-weight:500;text-shadow:0 0 6px #000,0 0 2px #000}
+.phlab{font-family:var(--mono);font-size:13px;font-weight:600;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(2,8,18,.72);border:1.5px solid currentColor;text-shadow:none;box-shadow:0 0 10px rgba(0,0,0,.6)}
+.phlab.p{color:var(--pos)}.phlab.n{color:var(--neg)}
+.nlab3{font-family:var(--mono);font-size:10.5px;color:var(--node);background:rgba(2,8,18,.7);padding:1px 5px;border-radius:4px;border:1px solid rgba(196,181,253,.35);white-space:nowrap}
+
+/* ==========================================================================
+   6. ADAPTACIÓN A PANTALLAS
+   ========================================================================== */
+@media (max-width:1250px){ :root{--ctrlW:268px;--sideW:350px} #corner .big{font-size:34px} }
+@media (max-width:980px){
+  .mobile-only{display:inline-flex!important}
+  .desk-only{display:none!important}
+  .brand p{display:none}
+  .topbar{padding:0 10px;gap:8px}
+  .tb-btn{padding:0 10px}
+  .tb-btn .t{display:none}
+  .close-x{display:block}
+  #controls{left:0;top:58px;bottom:0;width:min(88vw,320px);border-radius:0 14px 14px 0;transform:translateX(-106%);transition:transform .28s ease}
+  #controls.open{transform:none}
+  #side{left:0;right:0;top:auto;bottom:0;width:auto;height:64vh;border-radius:16px 16px 0 0;transform:translateY(106%);transition:transform .3s ease}
+  #side.open{transform:none}
+  #hud{left:10px;right:10px;bottom:10px}
+  .hudline{font-size:10px}
+  #viewbar{right:10px;top:64px}
+  #corner{left:12px;top:64px}
+}
+@media (max-width:520px){ #corner .big{font-size:28px} .lg{height:23px;font-size:10.5px;padding:0 8px} .brand h1{font-size:13.5px} #viewbar .seg button{padding:0 7px} }
+</style>
+</head>
+<body>
+
+<div id="splash"><div class="in"><div></div>Calculando funciones de onda…</div></div>
+<div id="viewport" aria-label="Escena 3D del orbital"></div>
+<div id="labels"></div>
+<div id="busy"><i></i><span>Calculando…</span></div>
+<div id="errbox"></div>
+
+<!-- ======================= BARRA SUPERIOR ======================= -->
+<header class="topbar">
+  <button class="tb-btn mobile-only" id="btnCtrl" aria-label="Controles">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h16"/></svg>
+  </button>
+  <div class="brand">
+    <svg width="30" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <circle cx="20" cy="20" r="3.2" fill="#2fd4ff"/>
+      <ellipse cx="20" cy="20" rx="17" ry="6.5" stroke="#2fd4ff" stroke-opacity=".75" stroke-width="1.4"/>
+      <ellipse cx="20" cy="20" rx="17" ry="6.5" stroke="#3d7bff" stroke-opacity=".75" stroke-width="1.4" transform="rotate(60 20 20)"/>
+      <ellipse cx="20" cy="20" rx="17" ry="6.5" stroke="#ff8a3d" stroke-opacity=".7" stroke-width="1.4" transform="rotate(-60 20 20)"/>
+    </svg>
+    <div>
+      <h1>Explorador de Orbitales Atómicos</h1>
+      <p>ψ<sub>nlm</sub> = R<sub>nl</sub>(r)·Y<sub>lm</sub>(θ,φ) · átomo hidrogenoide · Z = 1 · unidades de a₀</p>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <button class="tb-btn" id="btnInfo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg><span class="t">Información</span></button>
+  <button class="tb-btn accent" id="btnDid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M7 9.5V15c0 1.7 2.2 3 5 3s5-1.3 5-3V9.5"/></svg><span class="t">Modo didáctico</span></button>
+  <button class="tb-btn desk-only" id="btnFull" title="Pantalla completa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+</header>
+
+<!-- ======================= PANEL DE CONTROL ======================= -->
+<aside class="panel" id="controls" aria-label="Panel de control">
+  <div class="panel-head"><h2>Panel de control</h2><button class="close-x" data-close="controls" aria-label="Cerrar">×</button></div>
+  <div class="panel-scroll">
+
+    <div class="sec">
+      <div class="sec-t">Orbital</div>
+      <div class="row"><div class="lbl">Número cuántico principal <b>n</b></div>
+        <div class="seg mono" id="segN"><button data-v="1">n = 1</button><button data-v="2">n = 2</button><button data-v="3">n = 3</button></div></div>
+      <div class="row"><div class="lbl">Tipo de orbital <b id="lblL">l</b></div>
+        <div class="seg mono" id="segT"><button data-v="s">s · l=0</button><button data-v="p">p · l=1</button><button data-v="d">d · l=2</button></div></div>
+      <div class="row"><div class="lbl">Orientación</div>
+        <div class="seg mono" id="segO"></div></div>
+      <div class="row"><div class="lbl">Selección directa</div>
+        <div class="otable" id="otable"></div></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-t">Representación</div>
+      <div class="row"><div class="lbl">Magnitud representada</div>
+        <div class="seg" id="segRep"><button data-v="phase">ψ · fases</button><button data-v="density">|ψ|² · densidad</button></div>
+        <p class="hint" id="repHint"></p></div>
+
+      <label class="tg"><span>Isosuperficie de probabilidad<small>|ψ| = c que encierra P</small></span><input type="checkbox" id="tSurf"><i></i></label>
+      <div class="row"><div class="lbl">Probabilidad encerrada P <b id="vProb">90 %</b></div><input type="range" id="rProb" min="50" max="95" step="1"></div>
+      <div class="row"><div class="lbl">Opacidad de la superficie <b id="vOpS">55 %</b></div><input type="range" id="rOpS" min="10" max="100" step="1"></div>
+
+      <label class="tg"><span>Nube de probabilidad<small>muestreo Monte Carlo de |ψ|²</small></span><input type="checkbox" id="tCloud"><i></i></label>
+      <div class="row"><div class="lbl">Densidad de puntos <b id="vPts">40 000</b></div><input type="range" id="rPts" min="5000" max="200000" step="5000"></div>
+      <div class="row"><div class="lbl">Opacidad de la nube <b id="vOpC">70 %</b></div><input type="range" id="rOpC" min="5" max="100" step="1"></div>
+
+      <label class="tg"><span>Plano de corte (mapa 2D)<small>valor de ψ o |ψ|² en un plano</small></span><input type="checkbox" id="tSlice"><i></i></label>
+      <label class="tg"><span>Seccionar la escena<small>quita la mitad más cercana a la cámara</small></span><input type="checkbox" id="tCut"><i></i></label>
+      <div class="row"><div class="lbl">Plano de corte</div>
+        <div class="seg mono" id="segPlane"><button data-v="xz">xz (y=0)</button><button data-v="xy">xy (z=0)</button><button data-v="yz">yz (x=0)</button></div></div>
+
+      <label class="tg"><span>Superficies nodales<small>radiales (esferas) y angulares</small></span><input type="checkbox" id="tNodes"><i></i></label>
+      <label class="tg"><span>Signo de ψ en cada región</span><input type="checkbox" id="tLabels"><i></i></label>
+      <label class="tg"><span>Ejes cartesianos</span><input type="checkbox" id="tAxes"><i></i></label>
+      <label class="tg"><span>Rejilla polar (plano xy)</span><input type="checkbox" id="tGrid"><i></i></label>
+      <div class="row" style="margin-top:6px"><div class="lbl">Resolución de la malla 3D</div>
+        <div class="seg mono" id="segQ"><button data-v="64">64³</button><button data-v="96">96³</button><button data-v="128">128³</button></div></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-t">Cámara</div>
+      <div class="row"><div class="lbl">Proyección</div>
+        <div class="seg" id="segProj"><button data-v="persp">Perspectiva</button><button data-v="ortho">Ortográfica</button></div></div>
+      <label class="tg"><span>Rotación automática</span><input type="checkbox" id="tRot"><i></i></label>
+      <label class="tg"><span>Escala común<small>compara tamaños reales entre capas</small></span><input type="checkbox" id="tScale"><i></i></label>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" id="bCam">⟲ Cámara</button>
+        <button class="btn primary" id="bReset">Reiniciar todo</button>
+      </div>
+      <p class="hint">Arrastrar: rotar · Rueda / pellizco: zoom · Botón derecho / dos dedos: desplazar. Teclas: <b>R</b> reinicia la cámara, <b>espacio</b> rotación.</p>
+    </div>
+  </div>
+</aside>
+
+<!-- ======================= PANEL LATERAL: INFO / DIDÁCTICO ======================= -->
+<aside class="panel" id="side" aria-label="Información científica">
+  <div class="panel-head mobile-only" style="display:flex"><h2>Información</h2><button class="close-x" data-close="side" aria-label="Cerrar">×</button></div>
+  <div class="tabs" role="tablist">
+    <button data-tab="info" class="on">Orbital</button>
+    <button data-tab="concepts">Conceptos</button>
+    <button data-tab="acts">Actividades</button>
+  </div>
+  <div class="panel-scroll">
+
+    <!-- ---------- Pestaña: información del orbital (generada por JS) ---------- -->
+    <div class="tabpane on" id="tab-info"><div id="info"></div></div>
+
+    <!-- ---------- Pestaña: conceptos (modo didáctico) ---------- -->
+    <div class="tabpane" id="tab-concepts">
+      <p class="prose" style="margin:12px 0 4px">Siete preguntas clave. Los botones <span style="color:var(--cyan)">▸</span> configuran la escena 3D para ilustrar cada idea.</p>
+
+      <details class="concept" open>
+        <summary><span class="num">1</span>¿Qué es un orbital atómico?</summary>
+        <div class="body prose">
+          <p>Un orbital es una <b>función de onda monoelectrónica</b> \(\psi_{nlm}(r,\theta,\varphi)\): una solución de la ecuación de Schrödinger independiente del tiempo para el electrón en el campo del núcleo.</p>
+          <div class="eq">\[\hat H\psi=E\psi,\qquad \hat H=-\frac{\hbar^2}{2\mu}\nabla^2-\frac{Ze^2}{4\pi\varepsilon_0\,r}\]</div>
+          <p>No es una órbita ni una trayectoria: la mecánica cuántica no le asigna al electrón un camino definido. El orbital contiene la información necesaria para predecir las <b>probabilidades</b> de los resultados de una medición (posición, energía, momento angular).</p>
+          <p>La «forma» de un orbital es una convención gráfica: lo habitual es dibujar una superficie que encierra un porcentaje dado de la probabilidad (en este simulador, ajustable entre 50 % y 95 %). Fuera de ella la probabilidad no es nula.</p>
+          <p>En el átomo de hidrógeno la energía depende sólo de \(n\):</p>
+          <div class="eq">\[E_n=-\frac{13{,}6\ \text{eV}\;Z^2}{n^2}\qquad(\text{degeneración } n^2)\]</div>
+          <div class="demos"><button class="demo" data-setup='{"orbital":"1s","showSurface":true,"showCloud":true,"rep":"phase","showSlice":false,"cut":false}'>1s con superficie y nube</button><button class="demo" data-setup='{"orbital":"3dz2","showSurface":true,"showCloud":false,"rep":"phase","showSlice":false,"cut":false}'>3d<sub>z²</sub></button></div>
+        </div>
+      </details>
+
+      <details class="concept">
+        <summary><span class="num">2</span>¿Qué representa la función de onda?</summary>
+        <div class="body prose">
+          <p>\(\psi\) es una <b>amplitud de probabilidad</b>: puede tomar valores positivos o negativos (y, en general, complejos). No es directamente observable. Para el átomo hidrogenoide se separa en una parte radial y una angular:</p>
+          <div class="eq">\[\psi_{nlm}(r,\theta,\varphi)=R_{nl}(r)\,Y_{lm}(\theta,\varphi)\]</div>
+          <p>El <b>signo global</b> es arbitrario: \(\psi\) y \(-\psi\) describen el mismo estado. Lo que sí tiene significado físico es el <b>signo relativo</b> entre regiones, porque determina cómo interfieren las funciones de onda (por ejemplo, el solapamiento constructivo o destructivo al formar enlaces).</p>
+          <div class="warnbox">Los colores <b style="color:var(--pos)">cian</b> y <b style="color:var(--neg)">naranja</b> indican el <b>signo de ψ</b>. No representan cargas eléctricas: el electrón tiene siempre carga −e en cualquier región.</div>
+          <div class="demos"><button class="demo" data-setup='{"orbital":"2pz","rep":"phase","showSurface":true,"showSlice":true,"slicePlane":"xz","cut":true,"showLabels":true}'>Fases de 2p<sub>z</sub> en un corte</button><button class="demo" data-setup='{"orbital":"2pz","rep":"density","showSurface":true,"showSlice":true,"slicePlane":"xz","cut":true}'>Mismo orbital en |ψ|²</button></div>
+        </div>
+      </details>
+
+      <details class="concept">
+        <summary><span class="num">3</span>¿Qué significa densidad de probabilidad?</summary>
+        <div class="body prose">
+          <p>Según la interpretación de Born, \(|\psi|^2\) es una <b>densidad</b>: probabilidad por unidad de volumen (unidades \(a_0^{-3}\)).</p>
+          <div class="eq">\[dP=|\psi(\mathbf r)|^2\,dV,\qquad \int_{\mathbb R^3}|\psi|^2\,dV=1\]</div>
+          <p>No hay que confundirla con la <b>distribución radial</b> \(P(r)\), probabilidad por unidad de distancia al núcleo, que incluye el volumen \(4\pi r^2dr\) de la cáscara esférica:</p>
+          <div class="eq">\[P(r)\,dr=r^2R_{nl}^2(r)\,dr\]</div>
+          <p>Para 1s, \(|\psi|^2\) es máxima <b>en el núcleo</b>, mientras que \(P(r)\) es máxima en \(r=a_0\).</p>
+          <p>Tres representaciones distintas en este simulador:</p>
+          <p>• <b>Nube de puntos</b>: cada punto es una posición muestreada al azar con densidad \(|\psi|^2\) — como superponer muchas mediciones de posición sobre átomos idénticos. No es un electrón moviéndose.<br>• <b>Isosuperficie</b>: superficie de \(|\psi|\) constante que encierra una probabilidad \(P\).<br>• <b>Plano de corte</b>: mapa del valor de \(\psi\) o \(|\psi|^2\) en un plano.</p>
+          <div class="demos"><button class="demo" data-setup='{"orbital":"1s","showSurface":false,"showCloud":true,"points":80000,"rep":"density","showSlice":true,"slicePlane":"xz","cut":true}'>Nube + mapa de 1s</button><button class="demo" data-tab-go="info" data-setup='{"orbital":"2s"}'>Ver P(r) de 2s</button></div>
+        </div>
+      </details>
+
+      <details class="concept">
+        <summary><span class="num">4</span>¿Qué son los nodos?</summary>
+        <div class="body prose">
+          <p>Un <b>nodo</b> es una superficie donde \(\psi=0\) (y por lo tanto \(|\psi|^2=0\)). Al atravesarla, \(\psi\) cambia de signo.</p>
+          <p>• <b>Nodos radiales</b>: esferas donde \(R_{nl}(r)=0\). Hay \(n-l-1\).<br>• <b>Nodos angulares</b>: planos o conos donde \(Y_{lm}=0\). Hay \(l\).</p>
+          <div class="eq">\[N_{\text{rad}}=n-l-1,\qquad N_{\text{ang}}=l,\qquad N_{\text{total}}=n-1\]</div>
+          <p>Más nodos implican mayor curvatura de \(\psi\) y, por lo tanto, mayor energía cinética: es el análogo de los armónicos de una cuerda vibrante.</p>
+          <div class="demos"><button class="demo" data-setup='{"orbital":"3s","showSurface":true,"showCloud":false,"showSlice":true,"slicePlane":"xz","cut":true,"showNodes":true,"rep":"phase"}'>Nodos radiales de 3s</button><button class="demo" data-setup='{"orbital":"3pz","showSurface":true,"showSlice":true,"slicePlane":"xz","cut":true,"showNodes":true,"rep":"phase"}'>Radial + angular en 3p<sub>z</sub></button><button class="demo" data-setup='{"orbital":"3dz2","showSurface":true,"showSlice":false,"cut":false,"showNodes":true,"rep":"phase","opacity":0.45}'>Conos nodales de 3d<sub>z²</sub></button></div>
+        </div>
+      </details>
+
+      <details class="concept">
+        <summary><span class="num">5</span>¿Por qué los orbitales p tienen dos lóbulos?</summary>
+        <div class="body prose">
+          <p>Para \(l=1,\ m_l=0\) la parte angular es \(Y_{10}\propto\cos\theta=z/r\): positiva para \(z&gt;0\), negativa para \(z&lt;0\) y nula en todo el plano \(xy\). Entonces</p>
+          <div class="eq">\[|\psi_{n10}|^2\propto R_{n1}^2(r)\cos^2\theta\]</div>
+          <p>tiene dos regiones de alta probabilidad separadas por un <b>plano nodal</b>: los dos lóbulos son un único orbital, con fases opuestas (paridad impar, \(\psi(-\mathbf r)=-\psi(\mathbf r)\)).</p>
+          <p>Las funciones complejas con \(m_l=\pm1\) tienen \(|\psi|^2\propto\sin^2\theta\): una distribución toroidal alrededor de \(z\), sin lóbulos. Los orbitales \(p_x\) y \(p_y\) son <b>combinaciones lineales reales</b> de \(m_l=+1\) y \(m_l=-1\), útiles en química porque se orientan sobre los ejes.</p>
+          <p>Como no hay trayectorias, no tiene sentido preguntar «cómo pasa el electrón de un lóbulo al otro».</p>
+          <div class="demos"><button class="demo" data-setup='{"orbital":"2pz","showSurface":true,"showNodes":true,"showSlice":false,"cut":false,"rep":"phase","showLabels":true}'>2p<sub>z</sub> y su plano nodal</button><button class="demo" data-setup='{"orbital":"2px","showSurface":true,"showNodes":true,"showSlice":false,"cut":false,"rep":"phase"}'>2p<sub>x</sub></button></div>
+        </div>
+      </details>
+
+      <details class="concept">
+        <summary><span class="num">6</span>¿Por qué los orbitales d presentan geometrías diferentes?</summary>
+        <div class="body prose">
+          <p>Para \(l=2\) hay \(2l+1=5\) funciones angulares independientes. Cuatro tienen forma de «trébol» con dos planos nodales: \(d_{xy}, d_{xz}, d_{yz}\) (lóbulos entre los ejes) y \(d_{x^2-y^2}\) (lóbulos sobre los ejes).</p>
+          <p>El quinto, \(d_{z^2}\) (\(m_l=0\)), es en realidad \(d_{3z^2-r^2}\). Sus dos nodos angulares son <b>conos</b> con \(\cos^2\theta=1/3\) (\(\theta\approx54{,}7^\circ\)), que separan dos lóbulos sobre \(z\) de un toroide de fase opuesta en el plano \(xy\).</p>
+          <div class="eq">\[3z^2-r^2=(z^2-x^2)+(z^2-y^2)\]</div>
+          <p>Es decir, \(d_{z^2}\) equivale a la suma de dos «tréboles» del tipo \(d_{z^2-x^2}\) y \(d_{z^2-y^2}\). Como sólo cinco funciones son linealmente independientes, la elección habitual usa cuatro tréboles y \(d_{z^2}\). Los cinco tienen la misma energía en el hidrógeno.</p>
+          <div class="demos"><button class="demo" data-setup='{"orbital":"3dz2","showSurface":true,"showNodes":true,"showSlice":true,"slicePlane":"xz","cut":true,"rep":"phase"}'>Corte de 3d<sub>z²</sub></button><button class="demo" data-setup='{"orbital":"3dx2y2","showSurface":true,"showNodes":true,"showSlice":false,"cut":false,"rep":"phase","view":"xy"}'>3d<sub>x²−y²</sub> desde arriba</button><button class="demo" data-setup='{"orbital":"3dxy","showSurface":true,"showNodes":true,"showSlice":false,"cut":false,"rep":"phase","view":"xy"}'>3d<sub>xy</sub> desde arriba</button></div>
+        </div>
+      </details>
+
+      <details class="concept">
+        <summary><span class="num">7</span>¿Cómo se relacionan los números cuánticos con los orbitales?</summary>
+        <div class="body prose">
+          <p>• \(n=1,2,3,\dots\) fija la energía y el tamaño: \(\langle r\rangle=\frac{a_0}{2Z}\left[3n^2-l(l+1)\right]\).<br>
+             • \(l=0,\dots,n-1\) fija el módulo del momento angular, \(|\mathbf L|=\hbar\sqrt{l(l+1)}\), y la forma (número de nodos angulares).<br>
+             • \(m_l=-l,\dots,+l\) fija la componente \(L_z=m_l\hbar\) y se vincula con la orientación.</p>
+          <table class="qn"><tr><th>n</th><th>l</th><th>m<sub>l</sub> permitidos</th><th>orbitales</th></tr>
+            <tr><td>1</td><td>0 (s)</td><td>0</td><td>1s</td></tr>
+            <tr><td>2</td><td>0 (s)</td><td>0</td><td>2s</td></tr>
+            <tr><td>2</td><td>1 (p)</td><td>−1, 0, +1</td><td>2p<sub>x</sub>, 2p<sub>y</sub>, 2p<sub>z</sub></td></tr>
+            <tr><td>3</td><td>0, 1</td><td>…</td><td>3s, 3p (×3)</td></tr>
+            <tr><td>3</td><td>2 (d)</td><td>−2 … +2</td><td>5 orbitales 3d</td></tr></table>
+          <p>Los orbitales reales con subíndices cartesianos (\(p_x\), \(d_{xy}\), …) no son autofunciones de \(L_z\), salvo los de \(m_l=0\) (\(p_z\), \(d_{z^2}\)): son combinaciones de \(+|m_l|\) y \(-|m_l|\). El número cuántico de espín \(m_s=\pm\tfrac12\) no modifica la parte espacial y no se representa.</p>
+          <div class="demos"><button class="demo" data-setup='{"orbital":"1s","commonScale":true,"showSurface":true,"showCloud":false,"cut":false,"showSlice":false}'>1s en escala común</button><button class="demo" data-setup='{"orbital":"3s","commonScale":true,"showSurface":true,"showCloud":false,"cut":true,"showSlice":false}'>3s en escala común</button></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- ---------- Pestaña: actividades (generada por JS) ---------- -->
+    <div class="tabpane" id="tab-acts"><div id="acts"></div></div>
+  </div>
+</aside>
+
+<!-- ======================= HUD ======================= -->
+<div id="corner"><div class="big" id="cornerName">2p<sub>z</sub></div><div class="sub" id="cornerSub"></div></div>
+<div id="viewbar"><div class="seg" id="segView"><button data-v="iso">3D</button><button data-v="xy">xy</button><button data-v="xz">xz</button><button data-v="yz">yz</button></div></div>
+<div id="hud"><div class="hud-in"><div class="legend" id="legend"></div><div class="hudline" id="hudline"></div></div></div>
+
+<script type="module">
+/* ==========================================================================
+   EXPLORADOR DE ORBITALES — LÓGICA
+   Organización del módulo:
+     §1 Utilidades           §6  Escena Three.js
+     §2 Física (R, Y, ψ)     §7  Objetos: superficies, nube, nodos, corte, ejes
+     §3 Catálogo de orbitales §8 Cámara
+     §4 Muestreo Monte Carlo §9  Estado y panel de control
+     §5 Grilla, umbral P y surface nets  §10 Panel de información
+                                          §11 Modo didáctico / actividades
+   ========================================================================== */
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------------- §1 UTILIDADES ---------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const A0_PM = 52.9177;                         // radio de Bohr en pm
+const fmt = (x, d = 2) => x.toFixed(d).replace('.', ',');
+const fmtInt = x => Math.round(x).toLocaleString('es-AR');
+const texNum = (x, d = 2) => x.toFixed(d).replace('.', '{,}');
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const isMobile = () => window.matchMedia('(max-width: 980px)').matches;
+const COL = { pos: '#2fd4ff', neg: '#ff8a3d', dens: '#7cf2c8', node: '#c4b5fd' };
+
+function typeset(el) {
+  const MJ = window.MathJax;
+  if (MJ && MJ.typesetPromise && MJ.startup && MJ.startup.promise) {
+    MJ.startup.promise.then(() => { MJ.typesetClear && MJ.typesetClear([el]); return MJ.typesetPromise([el]); }).catch(() => {});
+  }
+}
+
+/* ---------------- §2 FÍSICA ----------------
+   Funciones radiales hidrogenoides (Z = 1, r en a0). Se escriben sin constante
+   y se normalizan numéricamente (∫ R² r² dr = 1); las constantes analíticas
+   que muestra el panel coinciden con las obtenidas (verificado).            */
+const RADIAL_RAW = {
+  '1,0': r => Math.exp(-r),
+  '2,0': r => (2 - r) * Math.exp(-r / 2),
+  '2,1': r => r * Math.exp(-r / 2),
+  '3,0': r => (27 - 18 * r + 2 * r * r) * Math.exp(-r / 3),
+  '3,1': r => r * (6 - r) * Math.exp(-r / 3),
+  '3,2': r => r * r * Math.exp(-r / 3)
+};
+const RADIAL = {};
+for (const [k, f] of Object.entries(RADIAL_RAW)) {        // normalización (Simpson)
+  const a = 0, b = 120, M = 24000, h = (b - a) / M; let s = 0;
+  for (let i = 0; i <= M; i++) { const r = a + i * h, w = (i === 0 || i === M) ? 1 : (i % 2 ? 4 : 2); s += w * (f(r) ** 2) * r * r; }
+  const N = 1 / Math.sqrt(s * h / 3);
+  RADIAL[k] = r => N * f(r);
+}
+
+/* Armónicos esféricos REALES normalizados, en función del versor (x̂,ŷ,ẑ).
+   max2 = máximo de Y² sobre la esfera (para el muestreo por rechazo).       */
+const PI = Math.PI, SQ = Math.sqrt;
+const cS = 1 / (2 * SQ(PI)), cP = SQ(3 / (4 * PI)), cD0 = SQ(5 / (16 * PI)), cD1 = SQ(15 / (4 * PI)), cD2 = SQ(15 / (16 * PI));
+const ANG = {
+  s:     { l: 0, f: () => cS,                       max2: cS * cS },
+  px:    { l: 1, f: (x) => cP * x,                  max2: cP * cP },
+  py:    { l: 1, f: (x, y) => cP * y,               max2: cP * cP },
+  pz:    { l: 1, f: (x, y, z) => cP * z,            max2: cP * cP },
+  dz2:   { l: 2, f: (x, y, z) => cD0 * (3 * z * z - 1), max2: 4 * cD0 * cD0 },
+  dxz:   { l: 2, f: (x, y, z) => cD1 * x * z,       max2: cD1 * cD1 / 4 },
+  dyz:   { l: 2, f: (x, y, z) => cD1 * y * z,       max2: cD1 * cD1 / 4 },
+  dxy:   { l: 2, f: (x, y) => cD1 * x * y,          max2: cD1 * cD1 / 4 },
+  dx2y2: { l: 2, f: (x, y) => cD2 * (x * x - y * y), max2: cD2 * cD2 }
+};
+
+/* ψ(x,y,z) para un orbital. En el origen: ψ = R(0)·Y00 para s; 0 si l > 0. */
+function makePsi(o) {
+  const R = RADIAL[o.n + ',' + o.l], Y = ANG[o.ang].f, l = o.l;
+  return (x, y, z) => {
+    const r = Math.sqrt(x * x + y * y + z * z);
+    if (r < 1e-10) return l === 0 ? R(0) * cS : 0;
+    const ir = 1 / r;
+    return R(r) * Y(x * ir, y * ir, z * ir);
+  };
+}
+
+/* Datos radiales: CDF de P(r)=r²R², nodos, radio más probable, ⟨r⟩, radios de corte. */
+const radialCache = {};
+function radialData(n, l) {
+  const key = n + ',' + l; if (radialCache[key]) return radialCache[key];
+  const R = RADIAL[key], rmax = 30 * n + 10, M = 16000, h = rmax / M;
+  const rs = new Float64Array(M + 1), cdf = new Float64Array(M + 1);
+  let acc = 0, prev = 0, best = -1, rmp = 0, rmean = 0;
+  for (let i = 0; i <= M; i++) {
+    const r = i * h, p = r * r * R(r) ** 2; rs[i] = r;
+    if (i > 0) { acc += 0.5 * (p + prev) * h; rmean += 0.5 * (p * r + prev * (r - h)) * h; }
+    cdf[i] = acc; prev = p; if (p > best) { best = p; rmp = r; }
+  }
+  for (let i = 0; i <= M; i++) cdf[i] /= acc;
+  const nodes = []; let rPrev = 1e-4, vPrev = R(rPrev);         // raíces de R (bisección)
+  for (let r = 0.01; r < 4 * n * n + 10; r += 0.01) {
+    const v = R(r);
+    if (v * vPrev < 0) { let a = rPrev, b = r; for (let k = 0; k < 60; k++) { const m = (a + b) / 2; (R(a) * R(m) <= 0) ? b = m : a = m; } nodes.push((a + b) / 2); }
+    rPrev = r; vPrev = v;
+  }
+  const rAt = q => { let lo = 0, hi = M; while (hi - lo > 1) { const m = (lo + hi) >> 1; cdf[m] < q ? lo = m : hi = m; } return rs[hi]; };
+  const cdfAt = r => { const i = clamp(Math.floor(r / h), 0, M - 1), t = r / h - i; return cdf[i] + t * (cdf[i + 1] - cdf[i]); };
+  const sample = u => {               // CDF inversa con interpolación lineal
+    let lo = 0, hi = M; while (hi - lo > 1) { const m = (lo + hi) >> 1; cdf[m] < u ? lo = m : hi = m; }
+    const c0 = cdf[lo], c1 = cdf[hi]; return rs[lo] + (c1 > c0 ? (u - c0) / (c1 - c0) : 0) * h;
+  };
+  const d = { R, rs, cdf, nodes, rmp, rmean: rmean / acc, r995: rAt(0.995), r999: rAt(0.999), cdfAt, sample };
+  radialCache[key] = d; return d;
+}
+
+/* ---------------- §3 CATÁLOGO DE ORBITALES ---------------- */
+const RTEX = {
+  '1,0': 'R_{10}(r)=2\\left(\\tfrac{Z}{a_0}\\right)^{3/2}e^{-\\rho}',
+  '2,0': 'R_{20}(r)=\\tfrac{1}{2\\sqrt2}\\left(\\tfrac{Z}{a_0}\\right)^{3/2}(2-\\rho)\\,e^{-\\rho/2}',
+  '2,1': 'R_{21}(r)=\\tfrac{1}{2\\sqrt6}\\left(\\tfrac{Z}{a_0}\\right)^{3/2}\\rho\\,e^{-\\rho/2}',
+  '3,0': 'R_{30}(r)=\\tfrac{2}{81\\sqrt3}\\left(\\tfrac{Z}{a_0}\\right)^{3/2}(27-18\\rho+2\\rho^2)\\,e^{-\\rho/3}',
+  '3,1': 'R_{31}(r)=\\tfrac{4}{81\\sqrt6}\\left(\\tfrac{Z}{a_0}\\right)^{3/2}\\rho\\,(6-\\rho)\\,e^{-\\rho/3}',
+  '3,2': 'R_{32}(r)=\\tfrac{4}{81\\sqrt{30}}\\left(\\tfrac{Z}{a_0}\\right)^{3/2}\\rho^2\\,e^{-\\rho/3}'
+};
+/* Información angular (independiente de n). nodes: superficies Y = 0. */
+const ANG_INFO = {
+  s:  { sub: '', html: '', ml: 'm_l=0', mlAct: [0], comb: null,
+        Y: 'Y_{00}=\\dfrac{1}{\\sqrt{4\\pi}}', angNodes: 'ninguno', nodes: [],
+        sym: 'Esférica: ψ depende sólo de r. Paridad par.', orient: 'Sin dirección privilegiada: la probabilidad es la misma en todas las direcciones.' },
+  px: { sub: 'x', html: 'x', ml: '|m_l|=1', mlAct: [-1, 1], comb: 'p_x=\\tfrac{1}{\\sqrt2}\\left(\\psi_{n1,-1}-\\psi_{n1,+1}\\right)',
+        Y: 'Y_{p_x}=\\sqrt{\\tfrac{3}{4\\pi}}\\,\\dfrac{x}{r}=\\sqrt{\\tfrac{3}{4\\pi}}\\sin\\theta\\cos\\varphi', angNodes: 'plano yz (x = 0)',
+        nodes: [{ t: 'plane', n: [1, 0, 0], name: 'x = 0' }],
+        sym: 'Axial alrededor del eje x. Antisimétrica respecto del plano yz. Paridad impar: ψ(−r) = −ψ(r).', orient: 'Dos lóbulos sobre el eje x, de fases opuestas.' },
+  py: { sub: 'y', html: 'y', ml: '|m_l|=1', mlAct: [-1, 1], comb: 'p_y=\\tfrac{i}{\\sqrt2}\\left(\\psi_{n1,-1}+\\psi_{n1,+1}\\right)',
+        Y: 'Y_{p_y}=\\sqrt{\\tfrac{3}{4\\pi}}\\,\\dfrac{y}{r}=\\sqrt{\\tfrac{3}{4\\pi}}\\sin\\theta\\sin\\varphi', angNodes: 'plano xz (y = 0)',
+        nodes: [{ t: 'plane', n: [0, 1, 0], name: 'y = 0' }],
+        sym: 'Axial alrededor del eje y. Antisimétrica respecto del plano xz. Paridad impar.', orient: 'Dos lóbulos sobre el eje y, de fases opuestas.' },
+  pz: { sub: 'z', html: 'z', ml: 'm_l=0', mlAct: [0], comb: null,
+        Y: 'Y_{10}=\\sqrt{\\tfrac{3}{4\\pi}}\\,\\dfrac{z}{r}=\\sqrt{\\tfrac{3}{4\\pi}}\\cos\\theta', angNodes: 'plano xy (z = 0)',
+        nodes: [{ t: 'plane', n: [0, 0, 1], name: 'z = 0' }],
+        sym: 'Axial alrededor del eje z. Antisimétrica respecto del plano xy. Paridad impar.', orient: 'Dos lóbulos sobre el eje z, de fases opuestas. Es autofunción de L_z (m_l = 0).' },
+  dz2: { sub: 'z^2', html: 'z²', ml: 'm_l=0', mlAct: [0], comb: null,
+        Y: 'Y_{20}=\\sqrt{\\tfrac{5}{16\\pi}}\\,\\dfrac{3z^2-r^2}{r^2}=\\sqrt{\\tfrac{5}{16\\pi}}\\,(3\\cos^2\\theta-1)', angNodes: '2 conos, θ = 54,7° y 125,3°',
+        nodes: [{ t: 'cone', name: 'cos²θ = 1/3' }],
+        sym: 'Axial alrededor de z. Simétrica respecto del plano xy. Paridad par.', orient: 'Dos lóbulos sobre el eje z (misma fase) y un toroide en el plano xy de fase opuesta, separados por dos conos nodales.' },
+  dxz: { sub: 'xz', html: 'xz', ml: '|m_l|=1', mlAct: [-1, 1], comb: 'd_{xz}=\\tfrac{1}{\\sqrt2}\\left(\\psi_{n2,-1}-\\psi_{n2,+1}\\right)',
+        Y: 'Y_{d_{xz}}=\\sqrt{\\tfrac{15}{4\\pi}}\\,\\dfrac{xz}{r^2}', angNodes: 'planos yz (x = 0) y xy (z = 0)',
+        nodes: [{ t: 'plane', n: [1, 0, 0], name: 'x = 0' }, { t: 'plane', n: [0, 0, 1], name: 'z = 0' }],
+        sym: 'Paridad par. |ψ|² es invariante ante rotaciones de 90° alrededor de y; ψ cambia de signo en cada una.', orient: 'Cuatro lóbulos en el plano xz, entre los ejes x y z (a 45°), con fases alternadas.' },
+  dyz: { sub: 'yz', html: 'yz', ml: '|m_l|=1', mlAct: [-1, 1], comb: 'd_{yz}=\\tfrac{i}{\\sqrt2}\\left(\\psi_{n2,-1}+\\psi_{n2,+1}\\right)',
+        Y: 'Y_{d_{yz}}=\\sqrt{\\tfrac{15}{4\\pi}}\\,\\dfrac{yz}{r^2}', angNodes: 'planos xz (y = 0) y xy (z = 0)',
+        nodes: [{ t: 'plane', n: [0, 1, 0], name: 'y = 0' }, { t: 'plane', n: [0, 0, 1], name: 'z = 0' }],
+        sym: 'Paridad par. |ψ|² es invariante ante rotaciones de 90° alrededor de x; ψ cambia de signo en cada una.', orient: 'Cuatro lóbulos en el plano yz, entre los ejes y y z, con fases alternadas.' },
+  dxy: { sub: 'xy', html: 'xy', ml: '|m_l|=2', mlAct: [-2, 2], comb: 'd_{xy}=\\tfrac{i}{\\sqrt2}\\left(\\psi_{n2,-2}-\\psi_{n2,+2}\\right)',
+        Y: 'Y_{d_{xy}}=\\sqrt{\\tfrac{15}{4\\pi}}\\,\\dfrac{xy}{r^2}=\\sqrt{\\tfrac{15}{16\\pi}}\\sin^2\\theta\\,\\sin 2\\varphi', angNodes: 'planos yz (x = 0) y xz (y = 0)',
+        nodes: [{ t: 'plane', n: [1, 0, 0], name: 'x = 0' }, { t: 'plane', n: [0, 1, 0], name: 'y = 0' }],
+        sym: 'Paridad par. |ψ|² es invariante ante rotaciones de 90° alrededor de z; ψ cambia de signo en cada una.', orient: 'Cuatro lóbulos en el plano xy, entre los ejes x e y (a 45°).' },
+  dx2y2: { sub: 'x^2-y^2', html: 'x²−y²', ml: '|m_l|=2', mlAct: [-2, 2], comb: 'd_{x^2-y^2}=\\tfrac{1}{\\sqrt2}\\left(\\psi_{n2,-2}+\\psi_{n2,+2}\\right)',
+        Y: 'Y_{d_{x^2-y^2}}=\\sqrt{\\tfrac{15}{16\\pi}}\\,\\dfrac{x^2-y^2}{r^2}=\\sqrt{\\tfrac{15}{16\\pi}}\\sin^2\\theta\\cos 2\\varphi', angNodes: 'planos y = x e y = −x',
+        nodes: [{ t: 'plane', n: [1, -1, 0], name: 'y = x' }, { t: 'plane', n: [1, 1, 0], name: 'y = −x' }],
+        sym: 'Paridad par. |ψ|² es invariante ante rotaciones de 90° alrededor de z; ψ cambia de signo en cada una.', orient: 'Cuatro lóbulos en el plano xy, sobre los ejes x e y. Es el d_xy rotado 45°.' }
+};
+/* Direcciones donde se rotula el signo de ψ (una etiqueta por región radial). */
+const LABEL_DIRS = {
+  s: [[0.8, 0, 0.6]], px: [[1, 0, 0], [-1, 0, 0]], py: [[0, 1, 0], [0, -1, 0]], pz: [[0, 0, 1], [0, 0, -1]],
+  dz2: [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0]],
+  dxz: [[1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1]], dyz: [[0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1]],
+  dxy: [[1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0]], dx2y2: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]]
+};
+const ORBITALS = {};
+const ORDER = [];
+(function buildCatalog() {
+  const add = (n, l, ang) => {
+    const t = 'spd'[l], ai = ANG_INFO[ang];
+    const id = n + t + (ang === 's' ? '' : ang.slice(1));
+    ORBITALS[id] = { id, n, l, t, ang, orient: ang === 's' ? '' : ang.slice(1),
+      tex: n + t + (ai.sub ? '_{' + ai.sub + '}' : ''),
+      html: n + t + (ai.html ? '<sub>' + ai.html + '</sub>' : '') };
+    ORDER.push(id);
+  };
+  for (const n of [1, 2, 3]) { add(n, 0, 's'); if (n >= 2) ['px', 'py', 'pz'].forEach(a => add(n, 1, a)); if (n >= 3) ['dxy', 'dxz', 'dyz', 'dx2y2', 'dz2'].forEach(a => add(n, 2, a)); }
+})();
+const ORIENTS = { s: [], p: ['x', 'y', 'z'], d: ['xy', 'xz', 'yz', 'x2y2', 'z2'] };
+const ORIENT_HTML = { x: 'x', y: 'y', z: 'z', xy: 'xy', xz: 'xz', yz: 'yz', x2y2: 'x²−y²', z2: 'z²' };
+
+/* Escalas de visualización: por capa (n) o común a todas. */
+const L_BY_N = {};
+for (const n of [1, 2, 3]) { let m = 0; for (let l = 0; l < n; l++) m = Math.max(m, radialData(n, l).r995); L_BY_N[n] = m * 0.92; }
+const L_COMMON = L_BY_N[3];
+
+/* ---------------- §4 MUESTREO MONTE CARLO DE |ψ|² ----------------
+   Como |ψ|² = R²(r)·Y²(Ω) es separable, el muestreo es exacto:
+   r ~ r²R² (CDF inversa) y Ω ~ Y² (rechazo sobre la esfera uniforme).       */
+function sampleCloud(o, count) {
+  const rd = radialData(o.n, o.l), A = ANG[o.ang];
+  const pos = new Float32Array(count * 3), sign = new Int8Array(count);
+  for (let i = 0; i < count; i++) {
+    const r = rd.sample(Math.random());
+    let x, y, z, Yv;
+    for (;;) {
+      z = 2 * Math.random() - 1; const ph = 2 * PI * Math.random(), q = Math.sqrt(1 - z * z);
+      x = q * Math.cos(ph); y = q * Math.sin(ph); Yv = A.f(x, y, z);
+      if (Math.random() * A.max2 <= Yv * Yv) break;
+    }
+    pos[3 * i] = r * x; pos[3 * i + 1] = r * y; pos[3 * i + 2] = r * z;
+    sign[i] = (rd.R(r) * Yv) >= 0 ? 1 : -1;
+  }
+  return { pos, sign };
+}
+
+/* ---------------- §5 GRILLA, UMBRAL DE PROBABILIDAD Y SURFACE NETS ---------------- */
+function computeGrid(o, N) {
+  const rd = radialData(o.n, o.l), psi = makePsi(o);
+  const L = rd.r999 * 1.03, h = 2 * L / (N - 1);
+  const f = new Float32Array(N * N * N);
+  let q = 0;
+  for (let k = 0; k < N; k++) { const z = -L + k * h; for (let j = 0; j < N; j++) { const y = -L + j * h; for (let i = 0; i < N; i++) f[q++] = psi(-L + i * h, y, z); } }
+  // Para elegir el umbral: densidades ordenadas y suma acumulada desde el máximo.
+  const d = new Float32Array(f.length); for (let i = 0; i < f.length; i++) d[i] = f[i] * f[i];
+  d.sort();
+  const cum = new Float64Array(d.length); let s = 0;
+  for (let m = 0, k = d.length - 1; k >= 0; k--, m++) { s += d[k]; cum[m] = s; }
+  return { o, N, L, h, f, d, cum, total: s, psi };
+}
+/* c tal que ∫_{|ψ|≥c} |ψ|² dV = P (relativo al total de la grilla, que cubre > 99,9 %). */
+function isoValue(G, P) {
+  const target = P * G.total; let lo = 0, hi = G.cum.length - 1;
+  while (lo < hi) { const m = (lo + hi) >> 1; G.cum[m] >= target ? hi = m : lo = m + 1; }
+  return Math.sqrt(G.d[G.d.length - 1 - lo]);
+}
+/* Surface nets: un vértice por celda atravesada (promedio de cruces en aristas);
+   un cuadrilátero por arista de la grilla con cambio de signo. Región interior:
+   sgn·ψ > c. Normales = −sgn·∇ψ/|∇ψ| (gradiente numérico de la ψ analítica). */
+const CORN = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]];
+const EDGES = []; for (let c = 0; c < 8; c++) for (const b of [1, 2, 4]) if (!(c & b)) EDGES.push([c, c | b]);
+function surfaceNets(G, sgn, iso) {
+  const { N, L, h, f, psi } = G, NC = N - 1;
+  const cellV = new Int32Array(NC * NC * NC).fill(-1);
+  const P = []; const v = new Float64Array(8); let nv = 0;
+  const F = (i, j, k) => sgn * f[i + N * (j + N * k)] - iso;
+  for (let k = 0; k < NC; k++) for (let j = 0; j < NC; j++) for (let i = 0; i < NC; i++) {
+    let mask = 0;
+    for (let c = 0; c < 8; c++) { const o = CORN[c]; const val = F(i + o[0], j + o[1], k + o[2]); v[c] = val; if (val > 0) mask |= 1 << c; }
+    if (mask === 0 || mask === 255) continue;
+    let sx = 0, sy = 0, sz = 0, cnt = 0;
+    for (const [a, b] of EDGES) {
+      if ((v[a] > 0) === (v[b] > 0)) continue;
+      const t = v[a] / (v[a] - v[b]), oa = CORN[a], ob = CORN[b];
+      sx += oa[0] + t * (ob[0] - oa[0]); sy += oa[1] + t * (ob[1] - oa[1]); sz += oa[2] + t * (ob[2] - oa[2]); cnt++;
+    }
+    P.push(-L + (i + sx / cnt) * h, -L + (j + sy / cnt) * h, -L + (k + sz / cnt) * h);
+    cellV[i + NC * (j + NC * k)] = nv++;
+  }
+  const idx = [];
+  const cid = (c) => cellV[c[0] + NC * (c[1] + NC * c[2])];
+  for (let k = 0; k < NC; k++) for (let j = 0; j < NC; j++) for (let i = 0; i < NC; i++) {
+    const p = [i, j, k], inside0 = F(i, j, k) > 0;
+    for (let a = 0; a < 3; a++) {
+      const q = [i, j, k]; q[a]++;
+      if ((F(q[0], q[1], q[2]) > 0) === inside0) continue;
+      const b = (a + 1) % 3, c = (a + 2) % 3;
+      if (p[b] === 0 || p[c] === 0) continue;
+      const c0 = p.slice(); c0[b]--; c0[c]--;
+      const c1 = p.slice(); c1[c]--;
+      const c3 = p.slice(); c3[b]--;
+      const v0 = cid(c0), v1 = cid(c1), v2 = cid(p), v3 = cid(c3);
+      if (v0 < 0 || v1 < 0 || v2 < 0 || v3 < 0) continue;
+      if (inside0) idx.push(v0, v1, v2, v0, v2, v3); else idx.push(v0, v2, v1, v0, v3, v2);
+    }
+  }
+  const pos = new Float32Array(P), nor = new Float32Array(P.length), e = h * 0.25;
+  for (let m = 0; m < nv; m++) {
+    const x = pos[3 * m], y = pos[3 * m + 1], z = pos[3 * m + 2];
+    let gx = psi(x + e, y, z) - psi(x - e, y, z), gy = psi(x, y + e, z) - psi(x, y - e, z), gz = psi(x, y, z + e) - psi(x, y, z - e);
+    const g = Math.hypot(gx, gy, gz) || 1; nor[3 * m] = -sgn * gx / g; nor[3 * m + 1] = -sgn * gy / g; nor[3 * m + 2] = -sgn * gz / g;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geo.setIndex(nv > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1));
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/* ---------------- §6 ESCENA THREE.JS ---------------- */
+const container = $('#viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.localClippingEnabled = true;
+renderer.setClearColor(0x000000, 0);
+container.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer({ element: $('#labels') });
+labelRenderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x050c1a, 0.01);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+// Iluminación: luz hemisférica fría + clave + contraluz cian (profundidad visual)
+scene.add(new THREE.HemisphereLight(0x8cc8ff, 0x0a1020, 0.75));
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.6); keyLight.position.set(6, -4, 9); scene.add(keyLight);
+const rimLight = new THREE.DirectionalLight(0x4fb8ff, 1.2); rimLight.position.set(-7, 6, -5); scene.add(rimLight);
+const fillLight = new THREE.DirectionalLight(0x9a7dff, 0.35); fillLight.position.set(0, 8, -2); scene.add(fillLight);
+
+const root = new THREE.Group(); scene.add(root);            // todo lo del orbital
+const gSurf = new THREE.Group(), gCloud = new THREE.Group(), gNodes = new THREE.Group(), gSlice = new THREE.Group(),
+      gAxes = new THREE.Group(), gGrid = new THREE.Group(), gLabels = new THREE.Group(), gNodeLabels = new THREE.Group();
+root.add(gSurf, gCloud, gNodes, gSlice, gAxes, gGrid, gLabels, gNodeLabels);
+
+// Plano de recorte común (sección de la escena)
+const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+
+// Sprite circular suave para los puntos
+const spriteTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+
+/* Núcleo (no a escala) */
+const nucleus = new THREE.Group();
+nucleus.add(new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xffffff })));
+const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: spriteTex, color: 0x9be7ff, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+glow.scale.setScalar(7); nucleus.add(glow); root.add(nucleus);
+
+/* ---------------- §7 OBJETOS DEL ORBITAL ---------------- */
+let G = null;            // grilla del orbital actual
+let cloudData = null;    // muestras Monte Carlo
+let isoC = 0;            // valor de |ψ| de la isosuperficie
+let Lview = 5;           // semiextensión visible (a0)
+
+const surfMats = {
+  pos: new THREE.MeshPhysicalMaterial({ color: COL.pos, roughness: 0.32, metalness: 0.05, clearcoat: 0.7, clearcoatRoughness: 0.25, envMapIntensity: 0.5, side: THREE.DoubleSide, transparent: true, clippingPlanes: [] }),
+  neg: new THREE.MeshPhysicalMaterial({ color: COL.neg, roughness: 0.32, metalness: 0.05, clearcoat: 0.7, clearcoatRoughness: 0.25, envMapIntensity: 0.5, side: THREE.DoubleSide, transparent: true, clippingPlanes: [] })
+};
+const cloudMat = new THREE.PointsMaterial({ size: 0.1, map: spriteTex, vertexColors: true, transparent: true, depthWrite: false, alphaTest: 0.02, sizeAttenuation: true, clippingPlanes: [] });
+const nodeMat = new THREE.MeshBasicMaterial({ color: COL.node, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, clippingPlanes: [], polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+const nodeLineMat = new THREE.LineBasicMaterial({ color: COL.node, transparent: true, opacity: 0.6, clippingPlanes: [] });
+
+function disposeGroup(g) {
+  for (let i = g.children.length - 1; i >= 0; i--) {
+    const c = g.children[i]; g.remove(c);
+    c.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.isCSS2DObject && o.element.parentNode) o.element.parentNode.removeChild(o.element); });
+  }
+}
+
+/* Isosuperficies ψ = +c y ψ = −c */
+function buildSurfaces() {
+  disposeGroup(gSurf);
+  isoC = isoValue(G, state.prob);
+  for (const sgn of [1, -1]) {
+    const geo = surfaceNets(G, sgn, isoC);
+    if (geo.index.count === 0) { geo.dispose(); continue; }
+    const m = new THREE.Mesh(geo, sgn > 0 ? surfMats.pos : surfMats.neg); m.renderOrder = 2; m.userData.sgn = sgn; gSurf.add(m);
+  }
+}
+/* Nube de puntos */
+function buildCloud() {
+  disposeGroup(gCloud);
+  cloudData = sampleCloud(current(), state.points);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(cloudData.pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(state.points * 3), 3));
+  const pts = new THREE.Points(geo, cloudMat); pts.renderOrder = 3; gCloud.add(pts);
+  colorCloud();
+}
+function colorCloud() {
+  const p = gCloud.children[0]; if (!p) return;
+  const col = p.geometry.attributes.color.array, s = cloudData.sign;
+  const cp = new THREE.Color(COL.pos), cn = new THREE.Color(COL.neg), cd = new THREE.Color(COL.dens);
+  for (let i = 0; i < s.length; i++) {
+    const c = state.rep === 'density' ? cd : (s[i] > 0 ? cp : cn);
+    col[3 * i] = c.r; col[3 * i + 1] = c.g; col[3 * i + 2] = c.b;
+  }
+  p.geometry.attributes.color.needsUpdate = true;
+}
+
+/* Superficies nodales: esferas (radiales), planos o conos (angulares) */
+function buildNodes() {
+  disposeGroup(gNodes); disposeGroup(gNodeLabels);
+  const o = current(), rd = radialData(o.n, o.l), R = Lview * 0.97;
+  for (const rn of rd.nodes) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(rn, 64, 40), nodeMat); s.renderOrder = 1; gNodes.add(s);
+    for (const ax of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) gNodes.add(circleLine(rn, new THREE.Vector3(...ax)));
+    const a = -0.5 - 0.75 * rd.nodes.indexOf(rn);       // direcciones distintas: sin superposición
+    const lab = mkLabel(`nodo radial · r = ${fmt(rn)} a₀`, 'nlab3'); lab.position.set(rn * Math.cos(a), 0, rn * Math.sin(a)); gNodeLabels.add(lab);
+  }
+  for (const nd of ANG_INFO[o.ang].nodes) {
+    if (nd.t === 'plane') {
+      const n = new THREE.Vector3(...nd.n).normalize();
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(R, 96), nodeMat);
+      disc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n); disc.renderOrder = 1; gNodes.add(disc);
+      gNodes.add(circleLine(R, n));
+      const lab = mkLabel('plano nodal ' + nd.name, 'nlab3');
+      const t = new THREE.Vector3(0, 0, 1); if (Math.abs(n.z) > 0.9) t.set(1, 0, 0); t.sub(n.clone().multiplyScalar(t.dot(n))).normalize();
+      lab.position.copy(t.multiplyScalar(R * 0.92)); gNodeLabels.add(lab);
+    } else if (nd.t === 'cone') {
+      const alpha = Math.acos(1 / Math.sqrt(3));
+      for (const zs of [1, -1]) {
+        gNodes.add(coneMesh(alpha, zs, R));
+        const rr = R * Math.sin(alpha), zz = zs * R * Math.cos(alpha);
+        const ring = circleLine(rr, new THREE.Vector3(0, 0, 1)); ring.position.z = zz; gNodes.add(ring);
+      }
+      const lab = mkLabel('conos nodales · θ = 54,7°', 'nlab3');
+      lab.position.set(R * Math.sin(alpha) * 0.8, 0, R * Math.cos(alpha) * 0.8); gNodeLabels.add(lab);
+    }
+  }
+}
+function circleLine(r, normal) {
+  const pts = []; for (let i = 0; i <= 128; i++) { const a = 2 * PI * i / 128; pts.push(new THREE.Vector3(r * Math.cos(a), r * Math.sin(a), 0)); }
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), nodeLineMat);
+  l.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal.clone().normalize()); return l;
+}
+function coneMesh(alpha, zs, S) {
+  const NS = 24, NP = 96, pos = [], idx = [];
+  for (let i = 0; i <= NS; i++) { const s = S * i / NS; for (let j = 0; j <= NP; j++) { const ph = 2 * PI * j / NP;
+    pos.push(s * Math.sin(alpha) * Math.cos(ph), s * Math.sin(alpha) * Math.sin(ph), zs * s * Math.cos(alpha)); } }
+  for (let i = 0; i < NS; i++) for (let j = 0; j < NP; j++) { const a = i * (NP + 1) + j, b = a + NP + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+  const m = new THREE.Mesh(g, nodeMat); m.renderOrder = 1; return m;
+}
+function mkLabel(text, cls, color) {
+  const d = document.createElement('div'); d.className = cls; d.textContent = text; if (color) d.style.color = color;
+  return new CSS2DObject(d);
+}
+
+/* Etiquetas de signo: a lo largo de direcciones características, en el máximo de
+   r²ψ² de cada región radial (entre nodos consecutivos). */
+function buildPhaseLabels() {
+  disposeGroup(gLabels);
+  const o = current(), rd = radialData(o.n, o.l), psi = makePsi(o);
+  const bounds = [0, ...rd.nodes, rd.r999];
+  for (const dv of LABEL_DIRS[o.ang]) {
+    const d = new THREE.Vector3(...dv).normalize();
+    for (let b = 0; b < bounds.length - 1; b++) {
+      let best = -1, rb = 0;
+      for (let r = bounds[b] + 1e-3; r < bounds[b + 1]; r += (bounds[b + 1] - bounds[b]) / 300) {
+        const v = psi(d.x * r, d.y * r, d.z * r), w = r * r * v * v; if (w > best) { best = w; rb = r; }
+      }
+      if (best <= 0) continue;
+      const v = psi(d.x * rb, d.y * rb, d.z * rb), pos = v >= 0;
+      const lab = mkLabel(pos ? '+' : '−', 'phlab ' + (pos ? 'p' : 'n'));
+      lab.element.title = pos ? 'ψ > 0 en esta región' : 'ψ < 0 en esta región';
+      lab.position.copy(d.clone().multiplyScalar(rb)); gLabels.add(lab);
+    }
+  }
+}
+
+/* Plano de corte: mapa 2D de ψ (divergente) o |ψ|² (secuencial) + contorno de la isosuperficie */
+const SLICE_RES = 384;
+const sliceCanvas = document.createElement('canvas'); sliceCanvas.width = sliceCanvas.height = SLICE_RES;
+const sliceTex = new THREE.CanvasTexture(sliceCanvas); sliceTex.colorSpace = THREE.SRGBColorSpace;
+// depthWrite: el mapa oculta lo que queda detrás del plano (la mitad seccionada no se superpone)
+const sliceMat = new THREE.MeshBasicMaterial({ map: sliceTex, transparent: true, side: THREE.DoubleSide, depthWrite: true, toneMapped: false });
+/* Sin sección: el mapa se dibuja primero y escribe profundidad (tapa lo que está detrás).
+   Con sección: no queda nada delante del plano, así que se dibuja al final, translúcido,
+   dejando ver atenuada la mitad posterior de las superficies. */
+function sliceOrder() { const m = gSlice.children[0]; if (!m) return; m.renderOrder = state.cut ? 10 : 0; sliceMat.depthWrite = !state.cut; }
+const PLANES = {
+  xz: { U: [1, 0, 0], V: [0, 0, 1] }, xy: { U: [1, 0, 0], V: [0, 1, 0] }, yz: { U: [0, 1, 0], V: [0, 0, 1] }
+};
+const DENS_MAP = [[0, [4, 9, 22]], [0.22, [24, 46, 120]], [0.48, [14, 140, 220]], [0.72, [80, 230, 205]], [1, [240, 255, 250]]];
+function densColor(t) {
+  for (let i = 1; i < DENS_MAP.length; i++) if (t <= DENS_MAP[i][0]) {
+    const [t0, c0] = DENS_MAP[i - 1], [t1, c1] = DENS_MAP[i], u = (t - t0) / (t1 - t0);
+    return [c0[0] + u * (c1[0] - c0[0]), c0[1] + u * (c1[1] - c0[1]), c0[2] + u * (c1[2] - c0[2])];
+  } return DENS_MAP[DENS_MAP.length - 1][1];
+}
+function buildSlice() {
+  disposeGroup(gSlice);
+  const o = current(), psi = makePsi(o), pl = PLANES[state.slicePlane], S = SLICE_RES, Ls = Lview;
+  const U = pl.U, V = pl.V, vals = new Float32Array(S * S);
+  let mx = 0;
+  for (let py = 0; py < S; py++) { const v = Ls - 2 * Ls * (py + 0.5) / S;
+    for (let px = 0; px < S; px++) { const u = -Ls + 2 * Ls * (px + 0.5) / S;
+      const val = psi(u * U[0] + v * V[0], u * U[1] + v * V[1], u * U[2] + v * V[2]); vals[py * S + px] = val; mx = Math.max(mx, Math.abs(val)); } }
+  const ctx = sliceCanvas.getContext('2d'), img = ctx.createImageData(S, S), D = img.data;
+  const cp = [47, 212, 255], cn = [255, 138, 61], base = [6, 14, 30];
+  const contour = state.showSurface;
+  const ref = isoC > 0 ? isoC : mx * 0.2;
+  for (let i = 0; i < S * S; i++) {
+    const val = vals[i]; let rgb, a;
+    // Contraste referido al umbral c de la isosuperficie: t = 1 − e^(−k·|ψ|/c), t(c) ≈ 0,45.
+    // Así todas las regiones (internas y externas) quedan visibles; los nodos, oscuros.
+    if (state.rep === 'phase') {
+      const t = 1 - Math.exp(-0.6 * Math.abs(val) / ref), c = val >= 0 ? cp : cn;
+      rgb = [base[0] + t * (c[0] - base[0]), base[1] + t * (c[1] - base[1]), base[2] + t * (c[2] - base[2])]; a = 0.42 + 0.55 * t;
+    } else {
+      const t = 1 - Math.exp(-0.6 * (val * val) / (ref * ref)); rgb = densColor(t); a = 0.42 + 0.55 * t;
+    }
+    if (contour) {     // contorno |ψ| = c (intersección de la isosuperficie con el plano)
+      const px = i % S, py = (i / S) | 0, inside = Math.abs(val) >= isoC;
+      const nb = [px + 1 < S ? vals[i + 1] : val, py + 1 < S ? vals[i + S] : val];
+      if (nb.some(w => (Math.abs(w) >= isoC) !== inside)) { rgb = [255, 255, 255]; a = 0.95; }
+    }
+    D[4 * i] = rgb[0]; D[4 * i + 1] = rgb[1]; D[4 * i + 2] = rgb[2]; D[4 * i + 3] = 255 * a;
+  }
+  ctx.putImageData(img, 0, 0); sliceTex.needsUpdate = true;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * Ls, 2 * Ls), sliceMat);
+  const Uv = new THREE.Vector3(...U), Vv = new THREE.Vector3(...V), W = Uv.clone().cross(Vv);
+  m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(Uv, Vv, W)); gSlice.add(m);
+  const fr = []; for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]) fr.push(Uv.clone().multiplyScalar(a * Ls).add(Vv.clone().multiplyScalar(b * Ls)));
+  gSlice.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(fr), new THREE.LineBasicMaterial({ color: 0x3d7bff, transparent: true, opacity: 0.6 })));
+}
+
+/* Ejes cartesianos con marcas y rejilla polar */
+function niceStep(L) { const raw = L / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : 5) * p; }
+function buildAxes() {
+  disposeGroup(gAxes); disposeGroup(gGrid);
+  const L = Lview * 1.12, step = niceStep(Lview), tick = Lview * 0.018;
+  const defs = [['x', [1, 0, 0], 0xff6b7a], ['y', [0, 1, 0], 0x5be38a], ['z', [0, 0, 1], 0x5a9bff]];
+  for (const [name, d, col] of defs) {
+    const D = new THREE.Vector3(...d), mat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.85 });
+    gAxes.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([D.clone().multiplyScalar(-L), D.clone().multiplyScalar(L)]), mat));
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(Lview * 0.018, Lview * 0.06, 16), new THREE.MeshBasicMaterial({ color: col }));
+    cone.position.copy(D.clone().multiplyScalar(L)); cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), D); gAxes.add(cone);
+    const perp = name === 'z' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1), tp = [];
+    for (let s = step; s < L * 0.98; s += step) for (const sg of [1, -1]) {
+      const c = D.clone().multiplyScalar(sg * s); tp.push(c.clone().add(perp.clone().multiplyScalar(tick)), c.clone().add(perp.clone().multiplyScalar(-tick)));
+    }
+    gAxes.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tp), mat));
+    const lab = mkLabel(name, 'axlab', '#' + col.toString(16).padStart(6, '0')); lab.position.copy(D.clone().multiplyScalar(L * 1.07)); gAxes.add(lab);
+  }
+  const rings = Math.floor(Lview / step);
+  const grid = new THREE.PolarGridHelper(rings * step, 12, rings, 96, 0x1d3a66, 0x14294a);
+  grid.rotation.x = PI / 2; grid.material.transparent = true; grid.material.opacity = 0.45; grid.material.depthWrite = false; gGrid.add(grid);
+  state._step = step;
+}
+
+/* Visibilidad, colores y opacidades */
+function applyVisuals() {
+  gSurf.visible = state.showSurface; gCloud.visible = state.showCloud; gNodes.visible = state.showNodes; gNodeLabels.visible = state.showNodes;
+  gSlice.visible = state.showSlice; gAxes.visible = state.showAxes; gGrid.visible = state.showGrid;
+  gLabels.visible = state.showLabels && state.rep === 'phase';
+  const dens = state.rep === 'density';
+  surfMats.pos.color.set(dens ? COL.dens : COL.pos); surfMats.neg.color.set(dens ? COL.dens : COL.neg);
+  for (const m of Object.values(surfMats)) {
+    m.opacity = state.opacity; m.depthWrite = state.opacity > 0.97; m.transparent = state.opacity <= 0.97;
+    m.emissive.set(m.color).multiplyScalar(0.06); m.needsUpdate = true;
+  }
+  cloudMat.opacity = state.cloudOpacity;
+  cloudMat.size = Lview * 0.016 * Math.pow(40000 / state.points, 0.22) * (state.showSurface ? 0.85 : 1);
+  sliceOrder();
+  const cp = state.cut ? [clipPlane] : [];
+  for (const m of [surfMats.pos, surfMats.neg, cloudMat, nodeMat, nodeLineMat]) { m.clippingPlanes = cp; m.needsUpdate = true; }
+  nucleus.scale.setScalar(Lview * 0.006); nucleus.children[1].scale.setScalar(5);
+  scene.fog.density = 0.11 / Lview;
+  updateLegend();
+}
+
+/* ---------------- §8 CÁMARA ---------------- */
+const aspect = () => window.innerWidth / window.innerHeight;
+const perspCam = new THREE.PerspectiveCamera(38, aspect(), 0.01, 2000);
+const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 2000);
+perspCam.up.set(0, 0, 1); orthoCam.up.set(0, 0, 1);
+let camera = perspCam;
+let controls = makeControls(camera);
+const VIEW_DIRS = { iso: [1, 0.82, 0.62], xy: [0, -0.0001, 1], xz: [0, -1, 0], yz: [1, 0, 0] };
+function makeControls(cam) {
+  const c = new OrbitControls(cam, renderer.domElement);
+  c.enableDamping = true; c.dampingFactor = 0.08; c.rotateSpeed = 0.85; c.zoomSpeed = 0.9; c.panSpeed = 0.8;
+  c.autoRotate = state ? state.autoRotate : false; c.autoRotateSpeed = 1.2;
+  c.addEventListener('start', () => { tweens.length = 0; });
+  return c;
+}
+/* Zona libre de la pantalla (entre paneles en escritorio). */
+function freeArea() {
+  const W = window.innerWidth, H = window.innerHeight;
+  if (isMobile()) return { cx: W / 2, w: W - 16, h: H - 58 - 150 };
+  const a = $('#controls').getBoundingClientRect(), b = $('#side').getBoundingClientRect();
+  return { cx: (a.right + b.left) / 2, w: b.left - a.right - 30, h: H - 58 - 130 };
+}
+/* Distancia de cámara para que el orbital entre completo en la zona libre. */
+function fitDistance() {
+  const t = Math.tan(THREE.MathUtils.degToRad(perspCam.fov / 2)), H = window.innerHeight, fa = freeArea();
+  const need = Lview * 1.12;
+  return Math.max(need * (H / 2) / (t * fa.w / 2), need * (H / 2) / (t * fa.h / 2));
+}
+/* Desplaza la proyección para centrar el origen en la zona libre. */
+function applyViewOffset() {
+  const W = window.innerWidth, H = window.innerHeight, off = W / 2 - freeArea().cx;
+  for (const c of [perspCam, orthoCam]) { if (Math.abs(off) > 1) c.setViewOffset(W, H, off, 0, W, H); else c.clearViewOffset(); }
+}
+function updateOrtho() {
+  const d = camera.position.distanceTo(controls.target) || fitDistance();
+  const hh = d * Math.tan(THREE.MathUtils.degToRad(perspCam.fov / 2)), a = aspect();
+  orthoCam.left = -hh * a; orthoCam.right = hh * a; orthoCam.top = hh; orthoCam.bottom = -hh; orthoCam.updateProjectionMatrix();
+}
+function setProjection(ortho) {
+  const pos = camera.position.clone(), tgt = controls.target.clone(), zoom = camera.zoom;
+  controls.dispose();
+  camera = ortho ? orthoCam : perspCam;
+  camera.position.copy(pos); camera.zoom = ortho ? 1 : 1; camera.lookAt(tgt);
+  controls = makeControls(camera); controls.target.copy(tgt);
+  if (ortho) updateOrtho(); else { perspCam.aspect = aspect(); perspCam.updateProjectionMatrix(); }
+  controls.update();
+}
+const tweens = [];
+function tween(dur, fn, done) { tweens.push({ t0: performance.now(), dur, fn, done }); }
+function flyTo(dirKey, dist, dur = 750) {
+  const dir = new THREE.Vector3(...(Array.isArray(dirKey) ? dirKey : VIEW_DIRS[dirKey])).normalize();
+  const d1 = dist ?? fitDistance();
+  const p0 = camera.position.clone().sub(controls.target), d0 = p0.length(), u0 = p0.clone().normalize();
+  const t0 = controls.target.clone(), z0 = camera.zoom;
+  tweens.length = 0;
+  tween(dur, t => {
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const u = u0.clone().lerp(dir, e).normalize(); if (u.lengthSq() < 1e-6) u.copy(dir);
+    controls.target.copy(t0.clone().multiplyScalar(1 - e));
+    camera.position.copy(controls.target).add(u.multiplyScalar(d0 + (d1 - d0) * e));
+    camera.zoom = z0 + (1 - z0) * e; camera.updateProjectionMatrix();
+    if (camera.isOrthographicCamera) updateOrtho();
+  });
+}
+function rescaleCamera(newL, oldL) {           // mantiene la dirección y ajusta la distancia a la nueva escala
+  const off = camera.position.clone().sub(controls.target);
+  const k = newL / oldL; if (Math.abs(k - 1) < 1e-3) return;
+  const d0 = off.length(), d1 = d0 * k, u = off.normalize(), t0 = controls.target.clone();
+  tween(600, t => { const e = 1 - Math.pow(1 - t, 3); controls.target.copy(t0.clone().multiplyScalar(1 - e)); camera.position.copy(controls.target).add(u.clone().multiplyScalar(d0 + (d1 - d0) * e)); if (camera.isOrthographicCamera) updateOrtho(); });
+}
+
+/* ---------------- §9 ESTADO Y PANEL DE CONTROL ---------------- */
+const DEFAULTS = {
+  orbital: '2pz', rep: 'phase', prob: 0.9, opacity: 0.6, points: isMobile() ? 25000 : 40000, cloudOpacity: 0.7,
+  showSurface: true, showCloud: true, showSlice: false, cut: false, slicePlane: 'xz', showNodes: false, showLabels: true,
+  showAxes: true, showGrid: true, quality: isMobile() ? 64 : 96, ortho: false, autoRotate: false, commonScale: false
+};
+var state = { ...DEFAULTS };
+const current = () => ORBITALS[state.orbital];
+
+function busy(on) { $('#busy').classList.toggle('show', on); }
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+
+let building = false, pending = null;
+/* Cambia el estado y actualiza sólo lo necesario. */
+async function setState(patch) {
+  if (building) { pending = { ...(pending || {}), ...patch }; return; }
+  const prev = { ...state }; Object.assign(state, patch);
+  const ch = k => prev[k] !== state[k];
+  const view = patch.view; delete state.view;
+  const oldL = Lview; Lview = state.commonScale ? L_COMMON : L_BY_N[current().n];
+  const scaleCh = Math.abs(Lview - oldL) > 1e-9;
+  building = true;
+  try {
+    if (ch('orbital') || ch('quality') || !G) {
+      busy(true); await nextFrame();
+      G = computeGrid(current(), state.quality);
+      buildSurfaces(); buildCloud(); buildNodes(); buildPhaseLabels(); buildSlice();
+      if (scaleCh || !gAxes.children.length) buildAxes();
+      renderInfo(); popIn();
+    } else {
+      if (ch('prob')) buildSurfaces();
+      if (ch('points')) buildCloud();
+      if (ch('rep')) colorCloud();
+      if (scaleCh) { buildAxes(); buildNodes(); }
+      if (scaleCh || ch('rep') || ch('slicePlane') || ch('prob') || ch('showSurface')) buildSlice();
+      if (ch('prob') || ch('rep')) updateHud();
+    }
+    if (ch('ortho')) setProjection(state.ortho);
+    if (ch('autoRotate')) controls.autoRotate = state.autoRotate;
+    if (scaleCh && G) rescaleCamera(Lview, oldL);
+    if (view) flyTo(view);
+    applyVisuals(); syncUI(); updateHud();
+  } catch (e) { showError(e); }
+  finally {
+    busy(false); building = false;
+    if (pending) { const p = pending; pending = null; setState(p); }
+  }
+}
+function popIn() {        // animación discreta de aparición
+  root.scale.setScalar(0.9);
+  tween(420, t => { const e = 1 - Math.pow(1 - t, 3); root.scale.setScalar(0.9 + 0.1 * e); });
+}
+
+/* Construcción del panel */
+function buildControlsUI() {
+  // Tabla de orbitales
+  const T = $('#otable'); let h = '';
+  h += '<span></span>' + ['s', 'p', '', 'd', ''].map(x => `<span class="tlab">${x}</span>`).join('');
+  h += `<span class="nlab">1</span><button class="chip" data-o="1s">1s</button><span></span><span></span><span></span><span></span>`;
+  h += `<span class="nlab">2</span><button class="chip" data-o="2s">2s</button>` + ['x', 'y', 'z'].map(a => `<button class="chip" data-o="2p${a}">2p<sub>${a}</sub></button>`).join('') + '<span></span>';
+  h += `<span class="nlab">3</span><button class="chip" data-o="3s">3s</button>` + ['x', 'y', 'z'].map(a => `<button class="chip" data-o="3p${a}">3p<sub>${a}</sub></button>`).join('') + '<span></span>';
+  h += `<span></span>` + ['xy', 'xz', 'yz', 'x2y2', 'z2'].map(a => `<button class="chip" data-o="3d${a}">3d<sub>${ORIENT_HTML[a]}</sub></button>`).join('');
+  T.innerHTML = h;
+  T.addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) setState({ orbital: b.dataset.o }); });
+
+  const segClick = (sel, fn) => $(sel).addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) fn(b.dataset.v); });
+  segClick('#segN', v => { const o = current(), n = +v; let t = o.t; if ('spd'.indexOf(t) > n - 1) t = 's'; setState({ orbital: pickOrbital(n, t, o.orient) }); });
+  segClick('#segT', v => { const o = current(); setState({ orbital: pickOrbital(o.n, v, o.orient) }); });
+  segClick('#segO', v => { const o = current(); setState({ orbital: pickOrbital(o.n, o.t, v) }); });
+  segClick('#segRep', v => setState({ rep: v }));
+  segClick('#segPlane', v => setState({ slicePlane: v }));
+  segClick('#segQ', v => setState({ quality: +v }));
+  segClick('#segProj', v => setState({ ortho: v === 'ortho' }));
+  segClick('#segView', v => flyTo(v));
+
+  const tg = (id, key) => $(id).addEventListener('change', e => setState({ [key]: e.target.checked }));
+  tg('#tSurf', 'showSurface'); tg('#tCloud', 'showCloud'); tg('#tSlice', 'showSlice'); tg('#tCut', 'cut'); tg('#tNodes', 'showNodes');
+  tg('#tLabels', 'showLabels'); tg('#tAxes', 'showAxes'); tg('#tGrid', 'showGrid'); tg('#tRot', 'autoRotate'); tg('#tScale', 'commonScale');
+
+  // Deslizadores: los de cálculo pesado se aplican con retardo (debounce)
+  const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+  const rng = (id, out, fmtv, apply, heavy) => {
+    const el = $(id), d = heavy ? debounce(apply, 160) : apply;
+    el.addEventListener('input', () => { $(out).textContent = fmtv(+el.value); paintRange(el); d(+el.value); });
+  };
+  rng('#rProb', '#vProb', v => v + ' %', v => setState({ prob: v / 100 }), true);
+  rng('#rOpS', '#vOpS', v => v + ' %', v => { state.opacity = v / 100; applyVisuals(); });
+  rng('#rPts', '#vPts', v => fmtInt(v), v => setState({ points: v }), true);
+  rng('#rOpC', '#vOpC', v => v + ' %', v => { state.cloudOpacity = v / 100; applyVisuals(); });
+
+  $('#bCam').addEventListener('click', () => flyTo('iso'));
+  $('#bReset').addEventListener('click', () => { setState({ ...DEFAULTS, orbital: state.orbital }); setTimeout(() => flyTo('iso'), 30); });
+}
+function pickOrbital(n, t, orient) {
+  if (t === 's') return n + 's';
+  const list = ORIENTS[t]; const o = list.includes(orient) ? orient : (t === 'p' ? 'z' : 'z2');
+  return n + t + o;
+}
+function paintRange(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); }
+function syncUI() {
+  const o = current();
+  const setSeg = (sel, v) => $$(sel + ' button').forEach(b => b.classList.toggle('on', b.dataset.v === String(v)));
+  setSeg('#segN', o.n); setSeg('#segT', o.t); setSeg('#segRep', state.rep); setSeg('#segPlane', state.slicePlane);
+  setSeg('#segQ', state.quality); setSeg('#segProj', state.ortho ? 'ortho' : 'persp');
+  $$('#segT button').forEach(b => { b.disabled = 'spd'.indexOf(b.dataset.v) > o.n - 1; });
+  const so = $('#segO');
+  so.innerHTML = o.t === 's' ? '<button disabled>esférico · sin orientación</button>' : ORIENTS[o.t].map(a => `<button data-v="${a}" class="${a === o.orient ? 'on' : ''}">${o.t}<sub>${ORIENT_HTML[a]}</sub></button>`).join('');
+  $('#lblL').textContent = 'l = ' + o.l;
+  $$('.chip').forEach(c => c.classList.toggle('on', c.dataset.o === o.id));
+  const chk = (id, v) => { $(id).checked = v; };
+  chk('#tSurf', state.showSurface); chk('#tCloud', state.showCloud); chk('#tSlice', state.showSlice); chk('#tCut', state.cut);
+  chk('#tNodes', state.showNodes); chk('#tLabels', state.showLabels); chk('#tAxes', state.showAxes); chk('#tGrid', state.showGrid);
+  chk('#tRot', state.autoRotate); chk('#tScale', state.commonScale);
+  const setR = (id, out, v, txt) => { const el = $(id); el.value = v; paintRange(el); $(out).textContent = txt; };
+  setR('#rProb', '#vProb', Math.round(state.prob * 100), Math.round(state.prob * 100) + ' %');
+  setR('#rOpS', '#vOpS', Math.round(state.opacity * 100), Math.round(state.opacity * 100) + ' %');
+  setR('#rPts', '#vPts', state.points, fmtInt(state.points));
+  setR('#rOpC', '#vOpC', Math.round(state.cloudOpacity * 100), Math.round(state.cloudOpacity * 100) + ' %');
+  $('#repHint').innerHTML = state.rep === 'phase'
+    ? 'Colores = <b style="color:var(--pos)">ψ &gt; 0</b> / <b style="color:var(--neg)">ψ &lt; 0</b>. Indican el signo de la función de onda, no cargas eléctricas.'
+    : '|ψ|² ≥ 0 en todo el espacio: no tiene signo, por eso se usa un único color.';
+  $('#cornerName').innerHTML = o.html;
+  $('#cornerSub').textContent = `n = ${o.n} · l = ${o.l} · ${ANG_INFO[o.ang].ml.replace('m_l', 'mₗ')}`;
+}
+function updateLegend() {
+  const L = $('#legend'); const items = [];
+  if (state.rep === 'phase') { items.push(['ψ > 0', COL.pos], ['ψ < 0', COL.neg]); }
+  else items.push(['|ψ|² (sin signo)', COL.dens]);
+  if (state.showNodes) items.push(['superficie nodal (ψ = 0)', COL.node]);
+  if (state.showSlice && state.showSurface) items.push(['contorno |ψ| = c', '#ffffff']);
+  L.innerHTML = items.map(([t, c]) => `<span class="lg"><i style="background:${c};box-shadow:0 0 8px ${c}"></i>${t}</span>`).join('');
+}
+function updateHud() {
+  const parts = [];
+  if (state.showSurface) parts.push(`Isosuperficie |ψ| = <b>${isoC.toExponential(2).replace('.', ',')}</b> a₀<sup>−3/2</sup> · encierra <b>${Math.round(state.prob * 100)} %</b> de la probabilidad`);
+  if (state.showCloud) parts.push(`Nube: <b>${fmtInt(state.points)}</b> posiciones muestreadas de |ψ|²`);
+  if (state.showSlice) parts.push(`Plano ${state.slicePlane}: mapa de <b>${state.rep === 'phase' ? 'ψ' : '|ψ|²'}</b>`);
+  const st = state._step || 1;
+  parts.push(`Marcas cada <b>${fmt(st, st < 1 ? 1 : 0)} a₀</b> (${fmtInt(st * A0_PM)} pm)${state.commonScale ? ' · escala común' : ''}`);
+  $('#hudline').innerHTML = parts.join('<br>');
+  updateLegend();
+}
+
+/* ---------------- §10 PANEL DE INFORMACIÓN ---------------- */
+function physicsText(o, rd) {
+  const nr = rd.nodes.length, nodesTxt = rd.nodes.map(r => fmt(r) + ' a₀').join(' y ');
+  const regions = [0, ...rd.nodes, Infinity];
+  const outer = 1 - rd.cdfAt(rd.nodes[nr - 1] || 0);
+  if (o.l === 0) {
+    if (o.n === 1) return `<p>Es el <b>estado fundamental</b> del hidrógeno. ψ es positiva en todo el espacio y decae exponencialmente con r: no hay nodos.</p>
+      <p>La densidad |ψ|² es <b>máxima en el núcleo</b>, pero la probabilidad de encontrar al electrón a una distancia r (en una cáscara de espesor dr) es máxima en <b>r = a₀</b>, el radio de Bohr: el volumen 4πr²dr de la cáscara crece mientras la densidad disminuye.</p>`;
+    return `<p>Tiene simetría esférica y <b>${nr} nodo${nr > 1 ? 's' : ''} radial${nr > 1 ? 'es' : ''}</b> (esfera${nr > 1 ? 's' : ''} en r = ${nodesTxt}). ψ cambia de signo al cruzar cada nodo: hay ${nr + 1} regiones concéntricas de fase alternada.</p>
+      <p>La región externa concentra el ${fmt(outer * 100, 1)} % de la probabilidad, pero la densidad no es nula cerca del núcleo. Esa <b>penetración</b> explica, en átomos polielectrónicos, que un orbital ${o.n}s tenga menor energía que ${o.n}p y ${o.n}d.</p>
+      <p>Para ver los nodos internos activá <i>Seccionar</i> y el <i>plano de corte</i>.</p>`;
+  }
+  if (o.l === 1) {
+    const ax = o.orient, pl = { x: 'yz', y: 'xz', z: 'xy' }[ax];
+    let t = `<p>La parte angular es proporcional a ${ax}/r: ψ cambia de signo al atravesar el <b>plano nodal ${pl}</b>, por lo que los dos lóbulos tienen <b>fases opuestas</b>. La densidad es nula en todo ese plano y en el núcleo.</p>`;
+    if (o.n === 3) t += `<p>Además, R₃₁ se anula en <b>r = ${fmt(rd.nodes[0])} a₀</b>: cada lóbulo queda dividido en una región interna y otra externa de signo opuesto (nodo radial esférico). La región externa concentra el ${fmt(outer * 100, 1)} % de la probabilidad.</p>`;
+    else t += `<p>R₂₁ no tiene ceros para r &gt; 0: no hay nodos radiales.</p>`;
+    if (ax !== 'z') t += `<p>${o.n}p<sub>${ax}</sub> no tiene un m<sub>l</sub> definido: es una combinación real de m<sub>l</sub> = +1 y −1. Con m<sub>l</sub> = ±1 complejos, |ψ|² sería un toroide alrededor de z.</p>`;
+    return t;
+  }
+  if (o.ang === 'dz2') return `<p>Sus dos nodos angulares son <b>superficies cónicas</b> con cos²θ = 1/3 (θ ≈ 54,7° y 125,3°). Separan dos lóbulos sobre el eje z, de la misma fase, de un <b>toroide</b> en el plano xy de fase opuesta.</p>
+      <p>Pese a su aspecto distinto, es equivalente a los otros cuatro orbitales 3d (misma energía en el hidrógeno): 3z² − r² = (z² − x²) + (z² − y²), suma de dos «tréboles». R₃₂ no tiene ceros: no hay nodos radiales.</p>`;
+  const pl = { dxy: 'xy', dxz: 'xz', dyz: 'yz', dx2y2: 'xy' }[o.ang];
+  return `<p>Cuatro lóbulos en el plano ${pl} con <b>fases alternadas</b>, separados por dos planos nodales perpendiculares (${ANG_INFO[o.ang].angNodes}). ${o.ang === 'dx2y2' ? 'Los lóbulos apuntan sobre los ejes x e y: es el 3d<sub>xy</sub> rotado 45° alrededor de z.' : 'Los lóbulos apuntan entre los ejes.'}</p>
+    <p>Es una combinación real de m<sub>l</sub> = +${Math.abs(ANG_INFO[o.ang].mlAct[1])} y −${Math.abs(ANG_INFO[o.ang].mlAct[1])}. R₃₂ ∝ r²e<sup>−r/3</sup> no tiene ceros: no hay nodos radiales, sólo los ${o.l} angulares.</p>`;
+}
+function renderInfo() {
+  const o = current(), ai = ANG_INFO[o.ang], rd = radialData(o.n, o.l);
+  const nr = o.n - o.l - 1, na = o.l;
+  const mls = []; for (let m = -o.l; m <= o.l; m++) mls.push(`<span class="${ai.mlAct.includes(m) ? 'act' : ''}">${m > 0 ? '+' + m : m === 0 ? '0' : '−' + (-m)}</span>`);
+  const E = -13.6057 / (o.n * o.n);
+  const regs = [0, ...rd.nodes, Infinity]; let regHtml = '';
+  if (rd.nodes.length) {
+    let prevC = 0, sgn = 1;
+    for (let i = 1; i < regs.length; i++) {
+      const c = i === regs.length - 1 ? 1 : rd.cdfAt(regs[i]), p = c - prevC; prevC = c;
+      regHtml += `<div style="flex:${Math.max(p, 0.012)};background:${sgn > 0 ? COL.pos : COL.neg}" title="región ${i}: ${fmt(p * 100, 1)} %">${p > 0.08 ? fmt(p * 100, 1) + '%' : ''}</div>`;
+      sgn = -sgn;
+    }
+  }
+  const el = $('#info');
+  el.innerHTML = `
+  <div class="ohead"><div class="oname">\\(${o.tex}\\)</div>
+    <div class="ofam">orbital ${o.t} · capa n = ${o.n}<br>${['','K','L','M'][o.n]} · subnivel ${o.n}${o.t}</div></div>
+  <div class="qgrid">
+    <div class="qcell"><div class="k">n</div><div class="v">${o.n}</div></div>
+    <div class="qcell"><div class="k">l</div><div class="v">${o.l} <small>(${o.t})</small></div></div>
+    <div class="qcell"><div class="k">m<sub>l</sub></div><div class="v" style="font-size:14px">\\(${ai.ml}\\)</div></div>
+    <div class="qcell wide"><div class="k">valores permitidos de m<sub>l</sub> para l = ${o.l}</div><div class="mlrow">${mls.join('')}</div></div>
+  </div>
+  <div class="sec-t" style="margin-top:14px">Nodos</div>
+  <div class="ncards">
+    <div class="ncard"><div class="v">${nr}</div><div class="k">radiales</div><div class="f">n − l − 1</div></div>
+    <div class="ncard"><div class="v">${na}</div><div class="k">angulares</div><div class="f">l</div></div>
+    <div class="ncard"><div class="v">${o.n - 1}</div><div class="k">totales</div><div class="f">n − 1</div></div>
+  </div>
+  <dl class="kv">
+    <dt>Radiales</dt><dd>${rd.nodes.length ? rd.nodes.map(r => `r = ${fmt(r, 3)} a₀ <span style="color:var(--dim)">(${fmtInt(r * A0_PM)} pm)</span>`).join('<br>') : 'ninguno'}</dd>
+    <dt>Angulares</dt><dd>${ai.angNodes}</dd>
+    <dt>Simetría</dt><dd>${ai.sym}</dd>
+    <dt>Orientación</dt><dd>${ai.orient}</dd>
+  </dl>
+  <div class="sec-t">Explicación física</div>
+  <div class="prose">${physicsText(o, rd)}</div>
+  <div class="sec-t" style="margin-top:12px">Función de onda</div>
+  <div class="eq"><div class="cap">Separación de variables</div>\\[\\psi_{${o.tex}}(r,\\theta,\\varphi)=R_{${o.n}${o.l}}(r)\\;Y_{${o.tex.slice(1)}}(\\theta,\\varphi)\\]</div>
+  <div class="eq"><div class="cap">Parte radial (ρ = Zr/a₀)</div>\\[${RTEX[o.n + ',' + o.l]}\\]</div>
+  <div class="eq"><div class="cap">Parte angular (armónico esférico real)</div>\\[${ai.Y}\\]</div>
+  ${ai.comb ? `<div class="eq"><div class="cap">Combinación de estados con m<sub>l</sub> definido</div>\\[${ai.comb}\\]</div>` : ''}
+  <div class="sec-t" style="margin-top:12px">De ψ a la probabilidad</div>
+  <div class="eq"><div class="cap">Densidad de probabilidad (interpretación de Born)</div>\\[dP=|\\psi|^2\\,dV=R_{${o.n}${o.l}}^2\\,|Y|^2\\;r^2\\sin\\theta\\,dr\\,d\\theta\\,d\\varphi\\]</div>
+  <div class="eq"><div class="cap">Distribución radial (integrando la parte angular)</div>\\[P(r)=r^2R_{${o.n}${o.l}}^2(r),\\qquad \\int_0^\\infty P(r)\\,dr=1\\]</div>
+  <div class="plotwrap"><canvas id="radialPlot"></canvas></div>
+  <div class="stats">
+    <div class="stat"><div class="k">r más probable</div><div class="v">${fmt(rd.rmp, 2)} a₀</div></div>
+    <div class="stat"><div class="k">⟨r⟩</div><div class="v">${fmt(rd.rmean, 2)} a₀</div></div>
+    <div class="stat"><div class="k">E<sub>n</sub></div><div class="v">${fmt(E, 2)} eV</div></div>
+  </div>
+  ${rd.nodes.length ? `<div class="sec-t" style="margin-top:12px">Probabilidad en cada región radial</div><div class="regions">${regHtml}</div><p class="hint">De adentro hacia afuera; colores según el signo de R(r)${o.l ? ' en la dirección de los lóbulos' : ''}.</p>` : ''}
+  <div class="note">Modelo hidrogenoide: un electrón, Z = 1, núcleo fijo. Longitudes en radios de Bohr, a₀ = 52,92 pm; para un ion de carga Z se escalan por 1/Z. En átomos polielectrónicos la parte angular es la misma y la radial es una aproximación. Constantes verificadas numéricamente: ∫|ψ|² dV = 1.</div>`;
+  typeset(el);
+  requestAnimationFrame(drawRadialPlot);
+}
+/* Gráfico: P(r) arriba y R(r) abajo, con nodos, r más probable y ⟨r⟩ */
+function drawRadialPlot() {
+  const cv = $('#radialPlot'); if (!cv) return; const W = cv.clientWidth, H = 210; if (!W) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2); cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const o = current(), rd = radialData(o.n, o.l), xmax = rd.r995 * 1.02;
+  const ml = 30, mr = 8, top1 = 16, h1 = 96, top2 = 132, h2 = 52, w = W - ml - mr;
+  const X = r => ml + r / xmax * w; const NS = 400;
+  let Pmax = 0, Rmax = 0; const Pv = [], Rv = [];
+  for (let i = 0; i <= NS; i++) { const r = xmax * i / NS, R = rd.R(r), P = r * r * R * R; Pv.push(P); Rv.push(R); Pmax = Math.max(Pmax, P); Rmax = Math.max(Rmax, Math.abs(R)); }
+  g.font = '10px JetBrains Mono, monospace'; g.textBaseline = 'middle';
+  // ejes
+  g.strokeStyle = 'rgba(110,170,255,.25)'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(ml, top1 + h1); g.lineTo(ml + w, top1 + h1); g.moveTo(ml, top2 + h2 / 2); g.lineTo(ml + w, top2 + h2 / 2); g.stroke();
+  const step = niceStep(xmax * 1.25); g.fillStyle = '#5a6c86'; g.textAlign = 'center';
+  for (let r = 0; r <= xmax; r += step) { g.fillText(fmt(r, step < 1 ? 1 : 0), X(r), H - 7); g.strokeStyle = 'rgba(110,170,255,.07)'; g.beginPath(); g.moveTo(X(r), top1); g.lineTo(X(r), top2 + h2); g.stroke(); }
+  g.textAlign = 'right'; g.fillText('r/a₀', W - 4, H - 18);
+  // nodos
+  g.setLineDash([3, 3]); g.strokeStyle = COL.node;
+  for (const rn of rd.nodes) { g.beginPath(); g.moveTo(X(rn), top1); g.lineTo(X(rn), top2 + h2); g.stroke(); }
+  g.setLineDash([]);
+  // P(r)
+  const grad = g.createLinearGradient(0, top1, 0, top1 + h1); grad.addColorStop(0, 'rgba(47,212,255,.45)'); grad.addColorStop(1, 'rgba(47,212,255,.02)');
+  g.beginPath(); g.moveTo(X(0), top1 + h1);
+  for (let i = 0; i <= NS; i++) g.lineTo(X(xmax * i / NS), top1 + h1 - Pv[i] / Pmax * h1 * 0.92);
+  g.lineTo(X(xmax), top1 + h1); g.closePath(); g.fillStyle = grad; g.fill();
+  g.beginPath(); for (let i = 0; i <= NS; i++) { const x = X(xmax * i / NS), y = top1 + h1 - Pv[i] / Pmax * h1 * 0.92; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.strokeStyle = COL.pos; g.lineWidth = 1.6; g.stroke();
+  // R(r), con signo
+  g.beginPath(); for (let i = 0; i <= NS; i++) { const x = X(xmax * i / NS), y = top2 + h2 / 2 - Rv[i] / Rmax * h2 * 0.46; i ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.strokeStyle = COL.neg; g.lineWidth = 1.4; g.stroke();
+  // marcadores
+  const mk = (r, txt, col, yy) => { g.fillStyle = col; g.beginPath(); g.arc(X(r), yy, 3, 0, 2 * PI); g.fill(); g.textAlign = X(r) > W - 70 ? 'right' : 'left'; g.fillText(txt, X(r) + (X(r) > W - 70 ? -6 : 6), yy - 1); };
+  const R = rd.R(rd.rmp); mk(rd.rmp, 'r_mp', '#e6f8ff', top1 + h1 - rd.rmp * rd.rmp * R * R / Pmax * h1 * 0.92);
+  g.setLineDash([2, 3]); g.strokeStyle = 'rgba(124,242,200,.8)'; g.beginPath(); g.moveTo(X(rd.rmean), top1 + 4); g.lineTo(X(rd.rmean), top1 + h1); g.stroke(); g.setLineDash([]);
+  g.fillStyle = COL.dens; g.textAlign = 'left'; g.fillText('⟨r⟩', X(rd.rmean) + 4, top1 + h1 - 9);
+  g.textAlign = 'left'; g.fillStyle = COL.pos; g.fillText('P(r) = r²R²', ml + 4, top1 - 6 + 2);
+  g.fillStyle = COL.neg; g.fillText('R(r)', ml + 4, top2 - 2);
+  g.fillStyle = '#5a6c86'; g.textAlign = 'right'; g.fillText('0', ml - 4, top1 + h1); g.fillText('0', ml - 4, top2 + h2 / 2);
+  if (rd.nodes.length) { g.fillStyle = COL.node; g.textAlign = 'right'; g.fillText('┆ nodos', W - 6, top1 - 4); }
+}
+
+/* ---------------- §11 MODO DIDÁCTICO Y ACTIVIDADES ---------------- */
+const ACTIVITIES = [
+  { tag: 'nodos radiales', title: 'Contar nodos radiales en 3s',
+    setup: { orbital: '3s', showSurface: true, showCloud: false, showSlice: true, slicePlane: 'xz', cut: true, showNodes: false, rep: 'phase', view: 'iso' },
+    task: 'Con la escena preparada (3s seccionado y plano de corte), observá las regiones concéntricas en el mapa. Luego activá «Superficies nodales» para comprobar tu respuesta.',
+    q: '¿Cuántos nodos radiales tiene el orbital 3s?', opts: ['0', '1', '2', '3'], ok: 2,
+    exp: 'N<sub>rad</sub> = n − l − 1 = 3 − 0 − 1 = 2. Son esferas en r ≈ 1,90 a₀ y r ≈ 7,10 a₀; ψ cambia de signo al cruzar cada una, por eso aparecen tres anillos de colores alternados.' },
+  { tag: 'nodos angulares', title: 'Planos nodales de 3d<sub>xz</sub>',
+    setup: { orbital: '3dxz', showSurface: true, showCloud: false, showSlice: false, cut: false, showNodes: false, rep: 'phase', view: 'xz' },
+    task: 'Rotá la escena e identificá dónde se anula ψ (entre lóbulos de distinto color). Después activá «Superficies nodales».',
+    q: '¿Cuáles son los planos nodales de 3d<sub>xz</sub>?', opts: ['xy (z = 0) e yz (x = 0)', 'xz (y = 0) e yz (x = 0)', 'xy (z = 0) y xz (y = 0)', 'y = x e y = −x'], ok: 0,
+    exp: 'Y ∝ xz/r² se anula si x = 0 (plano yz) o si z = 0 (plano xy). Los lóbulos quedan entre los ejes x y z, en el plano xz.' },
+  { tag: 'fases', title: 'El significado de los colores',
+    setup: { orbital: '2pz', showSurface: true, showCloud: true, showSlice: false, cut: false, showLabels: true, rep: 'phase', view: 'xz' },
+    task: 'Observá los dos lóbulos de 2p<sub>z</sub>. Después cambiá a «|ψ|² · densidad» y compará.',
+    q: '¿Qué indican los dos colores de los lóbulos?', opts: ['Regiones con carga positiva y negativa', 'El signo de la función de onda ψ', 'Dos electrones con espín opuesto', 'Regiones de alta y baja energía'], ok: 1,
+    exp: 'Indican el signo de ψ (z > 0: ψ > 0; z < 0: ψ < 0). |ψ|² es idéntica en ambos lóbulos y el electrón tiene carga −e en cualquier región. El signo global es arbitrario; importa el signo relativo.' },
+  { tag: 'radial vs angular', title: '2p<sub>z</sub> frente a 3p<sub>z</sub>',
+    setup: { orbital: '3pz', showSurface: true, showCloud: false, showSlice: true, slicePlane: 'xz', cut: true, showNodes: true, rep: 'phase', view: 'iso' },
+    task: 'Compará el corte de 3p<sub>z</sub> con el de 2p<sub>z</sub> (cambiá n con el selector). Prestá atención a lo que ocurre a lo largo del eje z.',
+    q: '¿Qué tiene 3p<sub>z</sub> que no tiene 2p<sub>z</sub>?', opts: ['Un segundo plano nodal', 'Un nodo radial esférico que divide cada lóbulo en dos regiones de signo opuesto', 'Cuatro lóbulos', 'Densidad no nula en el núcleo'], ok: 1,
+    exp: 'Ambos tienen l = 1 (un plano nodal). 3p<sub>z</sub> tiene además n − l − 1 = 1 nodo radial en r = 6 a₀, donde R₃₁ ∝ r(6 − r) cambia de signo.' },
+  { tag: 'geometría d', title: 'El caso de 3d<sub>z²</sub>',
+    setup: { orbital: '3dz2', showSurface: true, showCloud: false, showSlice: true, slicePlane: 'xz', cut: true, showNodes: true, rep: 'phase', view: 'xz' },
+    task: 'Observá el corte xz de 3d<sub>z²</sub> con las superficies nodales activadas.',
+    q: 'Si 3d<sub>z²</sub> no tiene planos nodales, ¿cómo cumple con l = 2 nodos angulares?', opts: ['No los cumple: es una excepción', 'Tiene dos superficies nodales cónicas (θ ≈ 54,7° y 125,3°)', 'Tiene dos nodos radiales', 'El toroide cuenta como nodo'], ok: 1,
+    exp: 'Y₂₀ ∝ 3cos²θ − 1 se anula en cos²θ = 1/3: dos conos coaxiales con z. Siguen siendo superficies angulares (dependen sólo de θ), así que N<sub>ang</sub> = l = 2.' },
+  { tag: 'probabilidad', title: '¿Qué encierra la superficie?',
+    setup: { orbital: '1s', showSurface: true, showCloud: true, points: 60000, showSlice: false, cut: true, rep: 'density', prob: 0.9, view: 'iso' },
+    task: 'Variá «Probabilidad encerrada» entre 50 % y 95 % y observá cuántos puntos de la nube quedan fuera de la superficie.',
+    q: 'Con P = 90 %, ¿qué significa que un punto de la nube quede fuera de la superficie?', opts: ['Es un error del muestreo', 'El electrón no puede estar allí', 'Es una posición posible, en una zona de menor densidad; en total hay 10 % de probabilidad fuera', 'Allí ψ = 0'], ok: 2,
+    exp: 'La superficie es una convención: |ψ| = c con c elegido para que adentro quede el 90 %. Afuera |ψ|² &lt; c² pero no es cero; la densidad decae exponencialmente sin anularse.' },
+  { tag: 'tamaño', title: 'Tamaño y número cuántico n',
+    setup: { orbital: '1s', commonScale: true, showSurface: true, showCloud: false, showSlice: false, cut: false, rep: 'phase', view: 'iso' },
+    task: 'Con «Escala común» activada, pasá de 1s a 2s y a 3s. Compará los valores de ⟨r⟩ en la pestaña «Orbital».',
+    q: '¿Cómo crece ⟨r⟩ de los orbitales s con n en el hidrógeno?', opts: ['Linealmente con n', 'Aproximadamente como n²', 'No cambia', 'Disminuye con n'], ok: 1,
+    exp: '⟨r⟩ = (a₀/2)[3n² − l(l + 1)]: 1,5 a₀; 6 a₀; 13,5 a₀ para 1s, 2s y 3s. Crece como n².' }
+];
+let score = {};
+function renderActivities() {
+  const el = $('#acts');
+  el.innerHTML = `<p class="prose" style="margin:12px 0 4px">Cada actividad prepara la escena. Explorá, respondé y leé la justificación.</p>` +
+    ACTIVITIES.map((a, i) => `
+    <div class="act" data-i="${i}">
+      <h4><span>${i + 1}. ${a.title}</span><span class="tag">${a.tag}</span></h4>
+      <p class="task">${a.task}</p>
+      <button class="demo" data-act="${i}">Preparar escena</button>
+      <div class="q">${a.q}</div>
+      <div class="opts">${a.opts.map((t, j) => `<button class="opt" data-a="${i}" data-j="${j}">${t}</button>`).join('')}</div>
+      <div class="fb"></div>
+    </div>`).join('') +
+    `<div class="score"><span id="scoreTxt">Respondidas: 0 / ${ACTIVITIES.length}</span><button class="demo" id="resetActs" style="border-color:var(--line2)">Reiniciar</button></div>`;
+  el.onclick = e => {
+    const p = e.target.closest('[data-act]'); if (p) { applySetup(ACTIVITIES[+p.dataset.act].setup); return; }
+    const b = e.target.closest('.opt'); if (b && !b.disabled) {
+      const i = +b.dataset.a, j = +b.dataset.j, a = ACTIVITIES[i], card = b.closest('.act');
+      card.querySelectorAll('.opt').forEach((x, k) => { x.disabled = true; if (k === a.ok) x.classList.add('right'); });
+      if (j !== a.ok) b.classList.add('wrong');
+      const fb = card.querySelector('.fb'); fb.innerHTML = (j === a.ok ? '<b style="color:var(--ok)">Correcto.</b> ' : '<b style="color:var(--bad)">No es correcto.</b> ') + a.exp; fb.classList.add('show');
+      score[i] = j === a.ok; const n = Object.keys(score).length, c = Object.values(score).filter(Boolean).length;
+      $('#scoreTxt').textContent = `Respondidas: ${n} / ${ACTIVITIES.length} · correctas: ${c}`;
+    }
+    if (e.target.id === 'resetActs') { score = {}; renderActivities(); }
+  };
+}
+function applySetup(s) {
+  const patch = { ...s };
+  if (!('commonScale' in patch)) patch.commonScale = false;
+  setState(patch);
+  if (isMobile()) $('#side').classList.remove('open');
+}
+
+/* ---------------- PANELES, PESTAÑAS, TECLADO ---------------- */
+function showTab(name) {
+  $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  $$('.tabpane').forEach(p => p.classList.toggle('on', p.id === 'tab-' + name));
+  if (name === 'info') requestAnimationFrame(drawRadialPlot);
+}
+function wirePanels() {
+  $('.tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
+  $('#btnInfo').addEventListener('click', () => { showTab('info'); if (isMobile()) { $('#controls').classList.remove('open'); $('#side').classList.toggle('open'); } });
+  $('#btnDid').addEventListener('click', () => { showTab('concepts'); if (isMobile()) { $('#controls').classList.remove('open'); $('#side').classList.add('open'); } });
+  $('#btnCtrl').addEventListener('click', () => { $('#side').classList.remove('open'); $('#controls').classList.toggle('open'); });
+  $$('[data-close]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.close).classList.remove('open')));
+  $('#btnFull').addEventListener('click', () => { if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {}); else document.exitFullscreen?.(); });
+  $('#tab-concepts').addEventListener('click', e => {
+    const b = e.target.closest('.demo'); if (!b) return;
+    applySetup(JSON.parse(b.dataset.setup || '{}'));
+    if (b.dataset.tabGo) showTab(b.dataset.tabGo);
+  });
+  window.addEventListener('keydown', e => {
+    if (e.target.closest('input,select,textarea')) return;
+    if (e.key === 'r' || e.key === 'R') flyTo('iso');
+    if (e.key === ' ') { e.preventDefault(); setState({ autoRotate: !state.autoRotate }); }
+  });
+}
+
+/* ---------------- BUCLE DE ANIMACIÓN ---------------- */
+const tmpV = new THREE.Vector3();
+function animate(now) {
+  requestAnimationFrame(animate);
+  for (let i = tweens.length - 1; i >= 0; i--) { const tw = tweens[i], t = clamp((now - tw.t0) / tw.dur, 0, 1); tw.fn(t); if (t >= 1) { tweens.splice(i, 1); tw.done && tw.done(); } }
+  controls.update();
+  // La sección quita siempre la mitad del espacio que mira a la cámara.
+  const n = new THREE.Vector3(...PLANES[state.slicePlane].U).cross(new THREE.Vector3(...PLANES[state.slicePlane].V));
+  const s = Math.sign(tmpV.copy(camera.position).dot(n)) || 1;
+  clipPlane.normal.copy(n).multiplyScalar(-s); clipPlane.constant = Lview * 2e-3;   // margen: conserva lo que está sobre el plano
+  updateLabelVisibility();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+/* CSS2DRenderer no hereda la visibilidad del grupo padre: se aplica aquí,
+   ocultando también las etiquetas que quedan en la mitad seccionada. */
+function updateLabelVisibility() {
+  for (const g of [gAxes, gLabels, gNodeLabels]) for (const o of g.children) {
+    if (!o.isCSS2DObject) continue;
+    let v = g.visible;
+    if (v && state.cut && g !== gAxes) v = clipPlane.distanceToPoint(o.position) > -1e-6;
+    o.visible = v;
+  }
+}
+function onResize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h); labelRenderer.setSize(w, h);
+  perspCam.aspect = w / h; applyViewOffset(); perspCam.updateProjectionMatrix(); updateOrtho();
+  drawRadialPlot();
+}
+function showError(e) { console.error(e); const b = $('#errbox'); b.style.display = 'block'; b.textContent = 'Error: ' + (e && e.message ? e.message : e); }
+
+/* ---------------- INICIO ---------------- */
+(async function init() {
+  try {
+    buildControlsUI(); wirePanels(); renderActivities();
+    window.addEventListener('resize', onResize);
+    Lview = L_BY_N[current().n];
+    applyViewOffset(); perspCam.updateProjectionMatrix();
+    camera.position.copy(new THREE.Vector3(...VIEW_DIRS.iso).normalize().multiplyScalar(fitDistance()));
+    controls.target.set(0, 0, 0); controls.update();
+    await setState({});
+    requestAnimationFrame(animate);
+    setTimeout(() => $('#splash').classList.add('hide'), 150);
+    typeset($('#tab-concepts'));
+    // API mínima para usar desde la consola en clase: explorador.set({orbital:'3dz2'})
+    window.explorador = { set: setState, get state() { return { ...state }; }, orbitales: ORDER.slice(),
+      _debug: () => ({ iso: isoC, L: G && G.L, N: G && G.N, surfVerts: gSurf.children.map(m => m.geometry.attributes.position.count), nodes: radialData(current().n, current().l).nodes }) };
+  } catch (e) { showError(e); $('#splash').classList.add('hide'); }
+})();
+</script>
+</body>
+</html>
